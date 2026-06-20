@@ -47,7 +47,7 @@
   .wrap{ max-width:720px; margin:0 auto; padding:28px 18px 60px; }
 
   /* ---------- Header ---------- */
-  header{ margin-bottom:22px; }
+  header{ margin-bottom:18px; }
   .eyebrow{
     font-family:var(--font-mono);
     font-size:11px;
@@ -73,10 +73,56 @@
   }
   .subtitle{ color:var(--text-dim); font-size:14px; max-width:46ch; }
 
+  /* ---------- Rotation card ---------- */
+  .rotation-card{
+    background:var(--bg-elev); border:1px solid var(--line);
+    border-radius:var(--radius); padding:14px 16px; margin:18px 0;
+  }
+  .rotation-label{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--text-faint); margin-bottom:4px;
+  }
+  .rotation-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .rotation-day{
+    font-family:var(--font-display); font-weight:800; font-size:24px;
+    text-transform:uppercase; color:var(--accent); line-height:1;
+  }
+  .rotation-btn{
+    background:var(--plate-green); border:none; color:#fff;
+    font-family:var(--font-mono); font-size:11px; font-weight:600;
+    padding:9px 14px; border-radius:7px; cursor:pointer;
+    transition:filter .15s ease;
+    white-space:nowrap;
+  }
+  .rotation-btn:hover{ filter:brightness(1.1); }
+  .rotation-track{ display:flex; gap:5px; margin-top:12px; flex-wrap:wrap; }
+  .rotation-chip{
+    font-family:var(--font-mono); font-size:10px; padding:4px 8px;
+    border-radius:5px; background:var(--bg-elev-2); color:var(--text-faint);
+    border:1px solid var(--line);
+  }
+  .rotation-chip.now{ border-color:var(--accent); color:var(--text); background:rgba(200,51,43,0.12); }
+
+  /* ---------- Week pills ---------- */
+  .week-tabs{
+    display:grid; grid-template-columns:repeat(5,1fr);
+    gap:6px; margin:18px 0 10px;
+  }
+  .week-pill{
+    background:var(--bg-elev); border:1px solid var(--line);
+    border-radius:8px; padding:7px 4px 8px; text-align:center;
+    cursor:pointer; color:var(--text-dim);
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .week-pill:hover{ border-color:var(--text-faint); }
+  .week-pill.active{ background:var(--bg-elev-2); border-color:var(--plate-blue); color:var(--text); }
+  .week-pill .wn{ font-family:var(--font-display); font-weight:700; font-size:16px; display:block; line-height:1; }
+  .week-pill .wl{ font-family:var(--font-mono); font-size:9px; color:var(--text-faint); display:block; margin-top:2px; text-transform:uppercase; }
+
   /* ---------- Day tabs ---------- */
   .tabs{
     display:grid; grid-template-columns:repeat(4,1fr);
-    gap:8px; margin:22px 0 18px;
+    gap:8px; margin:10px 0 18px;
   }
   .tab{
     background:var(--bg-elev);
@@ -231,6 +277,8 @@
   @media (max-width:420px){
     .set-row{ grid-template-columns:22px 1fr 80px 28px; gap:6px; }
     .tab .tname{ font-size:14px; }
+    .week-pill .wn{ font-size:14px; }
+    .rotation-day{ font-size:20px; }
   }
 </style>
 </head>
@@ -238,16 +286,26 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Semana 1 · Torso / Pierna x2</div>
+    <div class="eyebrow" id="eyebrow">Semana 1 · Torso / Pierna x2</div>
     <h1>Bitácora de Fuerza</h1>
     <div class="subtitle">Anotá el peso real de cada serie y marcá las que vas completando. Se guarda solo.</div>
   </header>
 
-  <div class="phase">
-    <span>Fase: <b>Acumulación</b></span>
-    <span>Esfuerzo: <b>RIR 2–3</b></span>
-    <span>Cadencia: <b>1/0/2</b></span>
+  <div class="rotation-card">
+    <div class="rotation-label">Tu rotación: Torso A → Torso B → Pierna A → Torso A → Torso B → Pierna B (arrancó viernes 19/6)</div>
+    <div class="rotation-row">
+      <div>
+        <div class="rotation-label" id="rotationSubLabel" style="margin-bottom:2px;">Hoy</div>
+        <div class="rotation-day" id="rotationDayName">—</div>
+      </div>
+      <button class="rotation-btn" id="rotationGoBtn">Ver sesión →</button>
+    </div>
+    <div class="rotation-track" id="rotationTrack"></div>
   </div>
+
+  <div class="week-tabs" id="weekTabs"></div>
+
+  <div class="phase" id="phaseStrip"></div>
 
   <div class="tabs" id="tabs"></div>
 
@@ -262,80 +320,137 @@
     <div class="nrow"><span class="ndot">●</span><span><b>Calentamiento:</b> 2 series de 20–25 reps con peso muy liviano en el primer ejercicio del día.</span></div>
     <div class="nrow"><span class="ndot">●</span><span><b>Abs / lumbares:</b> al final de cada uno de los 4 días.</span></div>
     <div class="nrow"><span class="ndot">●</span><span><b>Progresión:</b> si completaste todas las reps de una serie, la próxima vez subís peso ahí. Si no llegaste, repetís el mismo peso.</span></div>
+    <div class="nrow"><span class="ndot">●</span><span><b>Semana 5 (descarga):</b> el peso sugerido baja solo al 55% de lo que veniás levantando. Es a propósito, no fuerces ahí.</span></div>
   </div>
 
 </div>
 
 <script>
+// standard:true => sigue el esquema de fases (12/10/8/8 → 10/8/6/6 → descarga).
+// standard:false => mantiene siempre su propio esquema de reps, solo le baja el peso en la descarga.
 const ROUTINE = [
   { id:'dia1', num:'Día 1', name:'Torso A', exercises:[
-    { name:'Press inclinado con barra', note:'Smith o barra libre 20/25 x lado', sets:[
+    { name:'Press inclinado con barra', note:'Smith o barra libre 20/25 x lado', standard:true, sets:[
       {reps:'12', w:30},{reps:'10', w:30},{reps:'8', w:40},{reps:'8', w:40}] },
-    { name:'Jalón al frente agarre abierto', sets:[
+    { name:'Jalón al frente agarre abierto', standard:true, sets:[
       {reps:'12', w:45},{reps:'10', w:50},{reps:'8', w:55},{reps:'8', w:60}] },
-    { name:'Apertura mancuernas banco plano', sets:[
+    { name:'Apertura mancuernas banco plano', standard:true, sets:[
       {reps:'12', w:11.5},{reps:'10', w:11.5},{reps:'8', w:13},{reps:'8', w:13}] },
-    { name:'Remo bajo en polea, prono abierto', sets:[
+    { name:'Remo bajo en polea, prono abierto', standard:true, sets:[
       {reps:'12', w:45},{reps:'10', w:50},{reps:'8', w:56},{reps:'8', w:60}] },
-    { name:'Vuelo lateral con mancuernas', sets:[
+    { name:'Vuelo lateral con mancuernas', standard:true, sets:[
       {reps:'12', w:9},{reps:'10', w:11.5},{reps:'8', w:11.5},{reps:'8', w:13}] },
-    { name:'Jalón en polea con soga (tríceps)', sets:[
+    { name:'Jalón en polea con soga (tríceps)', standard:true, sets:[
       {reps:'12', w:40},{reps:'10', w:40},{reps:'8', w:40},{reps:'8', w:45}] },
-    { name:'Curl con barra EZ (bíceps)', sets:[
+    { name:'Curl con barra EZ (bíceps)', standard:true, sets:[
       {reps:'12', w:10},{reps:'10', w:15},{reps:'8', w:20},{reps:'8', w:20}] },
   ]},
   { id:'dia2', num:'Día 2', name:'Pierna A', exercises:[
-    { name:'Sentadilla', sets:[
+    { name:'Sentadilla', standard:true, sets:[
       {reps:'12', w:40},{reps:'10', w:50},{reps:'8', w:55},{reps:'8', w:60}] },
-    { name:'Prensa 45°', sets:[
+    { name:'Prensa 45°', standard:true, sets:[
       {reps:'12', w:60},{reps:'10', w:65},{reps:'8', w:70},{reps:'8', w:80}] },
-    { name:'Sentadilla hack', note:'liviano, ajustar en sesión', sets:[
+    { name:'Sentadilla hack', note:'liviano, ajustar en sesión', standard:true, sets:[
       {reps:'12', w:null},{reps:'10', w:null},{reps:'8', w:null},{reps:'8', w:null}] },
-    { name:'Femoral de pie en máquina', note:'liviano, ajustar en sesión', sets:[
+    { name:'Femoral de pie en máquina', note:'liviano, ajustar en sesión', standard:false, sets:[
       {reps:'12', w:null},{reps:'12', w:null},{reps:'12', w:null}] },
-    { name:'Gemelos de pie en máquina', sets:[
+    { name:'Gemelos de pie en máquina', standard:false, sets:[
       {reps:'20', w:90},{reps:'20', w:90},{reps:'20', w:90}] },
   ]},
   { id:'dia3', num:'Día 3', name:'Torso B', exercises:[
-    { name:'Press militar con barra', sets:[
+    { name:'Press militar con barra', standard:true, sets:[
       {reps:'12', w:20},{reps:'10', w:20},{reps:'8', w:25},{reps:'8', w:25}] },
-    { name:'Remo con barra EZ supino', note:'peso x lado', sets:[
+    { name:'Remo con barra EZ supino', note:'peso x lado', standard:true, sets:[
       {reps:'12', w:7.5},{reps:'10', w:10},{reps:'8', w:12.5},{reps:'8', w:15}] },
-    { name:'Press plano con mancuernas', sets:[
+    { name:'Press plano con mancuernas', standard:true, sets:[
       {reps:'12', w:13},{reps:'10', w:16},{reps:'8', w:16},{reps:'8', w:16}] },
-    { name:'Jalón al frente agarre neutro cerrado', sets:[
+    { name:'Jalón al frente agarre neutro cerrado', standard:true, sets:[
       {reps:'12', w:50},{reps:'10', w:50},{reps:'8', w:55},{reps:'8', w:55}] },
-    { name:'Vuelo posterior, banco inclinado', sets:[
+    { name:'Vuelo posterior, banco inclinado', standard:true, sets:[
       {reps:'12', w:9},{reps:'10', w:12.5},{reps:'8', w:12.5},{reps:'8', w:16}] },
-    { name:'Press francés con barra EZ inclinado', sets:[
+    { name:'Press francés con barra EZ inclinado', standard:true, sets:[
       {reps:'12', w:10},{reps:'10', w:15},{reps:'8', w:15},{reps:'8', w:20}] },
-    { name:'Curl martillo con mancuernas', sets:[
+    { name:'Curl martillo con mancuernas', standard:true, sets:[
       {reps:'12', w:11.5},{reps:'10', w:13},{reps:'8', w:13},{reps:'8', w:16}] },
   ]},
   { id:'dia4', num:'Día 4', name:'Pierna B', exercises:[
-    { name:'Hip thrust con barra', note:'arrancar conservador y subir', sets:[
+    { name:'Hip thrust con barra', note:'arrancar conservador y subir', standard:true, sets:[
       {reps:'12', w:20},{reps:'10', w:20},{reps:'8', w:20},{reps:'8', w:20}] },
-    { name:'Camilla femoral', sets:[
+    { name:'Camilla femoral', standard:true, sets:[
       {reps:'12', w:35},{reps:'10', w:40},{reps:'8', w:45},{reps:'8', w:45}] },
-    { name:'Zancadas con mancuernas', note:'por pierna', sets:[
+    { name:'Zancadas con mancuernas', note:'por pierna', standard:false, sets:[
       {reps:'10-12', w:8},{reps:'10-12', w:8},{reps:'10-12', w:10}] },
-    { name:'Prensa 45° pies arriba', sets:[
+    { name:'Prensa 45° pies arriba', standard:false, sets:[
       {reps:'12', w:50},{reps:'12', w:55},{reps:'12', w:60}] },
-    { name:'Gemelos sentado en máquina', note:'ajustar en sesión', sets:[
+    { name:'Gemelos sentado en máquina', note:'ajustar en sesión', standard:false, sets:[
       {reps:'15-20', w:null},{reps:'15-20', w:null},{reps:'15-20', w:null}] },
   ]},
 ];
 
-const STORAGE_KEY = 'entreno-fuerza:semana1';
-let progress = {}; // { dia1: [ [ {weight, done}, ... ], ... ], ... }
+const WEEKS = [
+  { n:1, label:'Acumulación', rir:'2–3' },
+  { n:2, label:'Acumulación', rir:'2' },
+  { n:3, label:'Intensificación', rir:'1–2' },
+  { n:4, label:'Intensificación', rir:'1' },
+  { n:5, label:'Descarga', rir:'4–5' },
+];
+
+// Torso A, Torso B, Pierna A, Torso A, Torso B, Pierna B — ciclo de 6 sesiones
+const ROTATION_CYCLE = ['dia1','dia3','dia2','dia1','dia3','dia4'];
+// Días de entrenamiento fijos: Lunes, Martes, Miércoles, Viernes (Jueves/Sáb/Dom descanso)
+// Ancla: Viernes 19/6/2026 = primera sesión del ciclo (Torso A)
+const CYCLE_ANCHOR = new Date(2026, 5, 19);
+
+const STORAGE_KEY = 'entreno-fuerza:ciclo';
+const LEGACY_KEY = 'entreno-fuerza:semana1'; // versión vieja, antes del mesociclo completo
+
+let progress = { weeks:{} };
+let activeWeek = 1;
 let activeDay = 'dia1';
 
-function defaultProgress(){
-  const p = {};
+function getSchemeForWeek(ex, weekN){
+  if(!ex.standard) return ex.sets.map(s=>s.reps);
+  if(weekN <= 2) return ['12','10','8','8'];
+  if(weekN === 3 || weekN === 4) return ['10','8','6','6'];
+  return ['12-15','12-15','12-15']; // semana 5, descarga
+}
+
+function getWeightDefault(dayId, exi, si, weekN, ex){
+  if(weekN === 1){
+    return ex.sets[Math.min(si, ex.sets.length-1)]?.w ?? null;
+  }
+  const prevWeek = progress.weeks[weekN-1];
+  let base = null;
+  if(prevWeek && prevWeek[dayId] && prevWeek[dayId][exi]){
+    const prevSets = prevWeek[dayId][exi];
+    const idx = Math.min(si, prevSets.length-1);
+    base = prevSets[idx] ? prevSets[idx].weight : null;
+  }
+  if(base === null || base === undefined){
+    base = ex.sets[Math.min(si, ex.sets.length-1)]?.w ?? null;
+  }
+  if(weekN === 5 && base !== null){
+    base = Math.round(base*0.55*2)/2; // redondea al 0.5 más cercano
+  }
+  return base;
+}
+
+function buildWeekProgress(weekN){
+  const wk = {};
   ROUTINE.forEach(day=>{
-    p[day.id] = day.exercises.map(ex => ex.sets.map(s => ({ weight: s.w, done:false })));
+    wk[day.id] = day.exercises.map((ex, exi)=>{
+      const reps = getSchemeForWeek(ex, weekN);
+      return reps.map((repsLabel, si)=>({
+        weight: getWeightDefault(day.id, exi, si, weekN, ex),
+        done:false
+      }));
+    });
   });
-  return p;
+  return wk;
+}
+
+function ensureWeek(weekN){
+  if(!progress.weeks[weekN]) progress.weeks[weekN] = buildWeekProgress(weekN);
 }
 
 function plateColor(i){
@@ -345,29 +460,123 @@ function plateColor(i){
 const PLATE_GREEN = '#3F8F4F', PLATE_YELLOW='#D9A91B', PLATE_BLUE='#2C5FA8', PLATE_RED='#C8332B';
 
 function barbellSVG(doneCount){
-  let endHTML = '';
-  for(let i=0;i<doneCount;i++){
+  const ends = [...Array(doneCount)].map((_,i)=>{
     const size = 16 + i*4;
     const color = [PLATE_GREEN, PLATE_YELLOW, PLATE_BLUE, PLATE_RED][i % 4];
-    endHTML = `<span class="plate" style="width:6px;height:${size}px;background:${color}"></span>` + endHTML;
-  }
-  return `<div class="bar"><div class="end">${endHTML}</div><div class="rod"></div><div class="end">${[...Array(doneCount)].map((_,i)=>{
-      const size = 16 + i*4;
-      const color = [PLATE_GREEN, PLATE_YELLOW, PLATE_BLUE, PLATE_RED][i % 4];
-      return `<span class="plate" style="width:6px;height:${size}px;background:${color}"></span>`;
-    }).join('')}</div></div>`;
+    return `<span class="plate" style="width:6px;height:${size}px;background:${color}"></span>`;
+  });
+  return `<div class="bar"><div class="end">${[...ends].reverse().join('')}</div><div class="rod"></div><div class="end">${ends.join('')}</div></div>`;
 }
 
 function checkIcon(){
   return `<svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.2 11.5L13 4.5" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
 
+function dayName(dayId){
+  const d = ROUTINE.find(x=>x.id===dayId);
+  return d ? `${d.num} · ${d.name}` : dayId;
+}
+
 function dayTotals(dayId){
-  const idx = ROUTINE.findIndex(d=>d.id===dayId);
-  const ex = progress[dayId] || [];
+  ensureWeek(activeWeek);
+  const ex = progress.weeks[activeWeek][dayId] || [];
   let total=0, done=0;
   ex.forEach(sets => sets.forEach(s => { total++; if(s.done) done++; }));
   return {total, done};
+}
+
+function stripTime(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+
+function isTrainingDay(date){
+  const dow = date.getDay(); // 0=domingo .. 6=sábado
+  return dow===1 || dow===2 || dow===3 || dow===5; // lunes, martes, miércoles, viernes
+}
+
+function sessionIndexForDate(targetDate){
+  // 0-based: cuántos días de entrenamiento pasaron desde el ancla hasta esta fecha (inclusive)
+  if(!isTrainingDay(targetDate)) return null;
+  let cur = stripTime(CYCLE_ANCHOR);
+  const target = stripTime(targetDate);
+  let idx = 0;
+  while(cur.getTime() !== target.getTime()){
+    cur.setDate(cur.getDate()+1);
+    if(isTrainingDay(cur)) idx++;
+  }
+  return idx;
+}
+
+function nextTrainingDate(fromDate){
+  const d = stripTime(fromDate);
+  d.setDate(d.getDate()+1);
+  while(!isTrainingDay(d)) d.setDate(d.getDate()+1);
+  return d;
+}
+
+const DOW_NAMES = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+
+function renderRotation(){
+  const today = stripTime(new Date());
+  let dayId, subLabel, btnLabel;
+
+  if(isTrainingDay(today)){
+    const idx = sessionIndexForDate(today) % ROTATION_CYCLE.length;
+    dayId = ROTATION_CYCLE[idx];
+    subLabel = 'Hoy';
+    btnLabel = 'Ver sesión de hoy →';
+  } else {
+    const nd = nextTrainingDate(today);
+    const idx = sessionIndexForDate(nd) % ROTATION_CYCLE.length;
+    dayId = ROTATION_CYCLE[idx];
+    subLabel = `Descanso · próxima: ${DOW_NAMES[nd.getDay()]} ${nd.getDate()}/${nd.getMonth()+1}`;
+    btnLabel = 'Ver próxima sesión →';
+  }
+
+  document.getElementById('rotationSubLabel').textContent = subLabel;
+  document.getElementById('rotationDayName').textContent = ROUTINE.find(d=>d.id===dayId).name;
+  const btn = document.getElementById('rotationGoBtn');
+  btn.textContent = btnLabel;
+  btn.onclick = ()=>{ activeDay = dayId; renderAll(); };
+
+  const highlightIdx = isTrainingDay(today)
+    ? sessionIndexForDate(today) % ROTATION_CYCLE.length
+    : sessionIndexForDate(nextTrainingDate(today)) % ROTATION_CYCLE.length;
+
+  const track = document.getElementById('rotationTrack');
+  track.innerHTML = '';
+  ROTATION_CYCLE.forEach((dId, i)=>{
+    const chip = document.createElement('span');
+    chip.className = 'rotation-chip' + (i===highlightIdx ? ' now' : '');
+    const d = ROUTINE.find(x=>x.id===dId);
+    chip.textContent = d.name;
+    track.appendChild(chip);
+  });
+}
+
+function renderWeekTabs(){
+  const el = document.getElementById('weekTabs');
+  el.innerHTML = '';
+  WEEKS.forEach(w=>{
+    const pill = document.createElement('div');
+    pill.className = 'week-pill' + (w.n===activeWeek ? ' active' : '');
+    pill.innerHTML = `<span class="wn">S${w.n}</span><span class="wl">${w.label}</span>`;
+    pill.addEventListener('click', ()=>{
+      activeWeek = w.n;
+      ensureWeek(activeWeek);
+      saveProgress();
+      renderAll();
+    });
+    el.appendChild(pill);
+  });
+}
+
+function renderPhaseStrip(){
+  const w = WEEKS.find(x=>x.n===activeWeek);
+  document.getElementById('phaseStrip').innerHTML = `
+    <span>Fase: <b>${w.label}</b></span>
+    <span>Esfuerzo: <b>RIR ${w.rir}</b></span>
+    <span>Cadencia: <b>1/0/2</b></span>
+  `;
+  document.getElementById('eyebrow').textContent = `Semana ${activeWeek} · Torso / Pierna x2`;
 }
 
 function renderTabs(){
@@ -390,30 +599,33 @@ function renderTabs(){
 }
 
 function renderPanels(){
+  ensureWeek(activeWeek);
+  const weekData = progress.weeks[activeWeek];
   const panels = document.getElementById('panels');
   panels.innerHTML = '';
   ROUTINE.forEach(day=>{
     const panel = document.createElement('div');
     panel.className = 'day-panel' + (day.id===activeDay ? ' active' : '');
     day.exercises.forEach((ex, exi)=>{
+      const reps = getSchemeForWeek(ex, activeWeek);
+      const exProgress = weekData[day.id][exi];
+      const doneCount = exProgress.filter(s=>s.done).length;
+      const schemeLabel = `${reps.length}×${reps.join('/')}`;
+
       const card = document.createElement('div');
       card.className = 'ex-card';
       card.style.animationDelay = (exi*0.04)+'s';
 
-      const exProgress = progress[day.id][exi];
-      const doneCount = exProgress.filter(s=>s.done).length;
-      const schemeLabel = `${ex.sets.length}×${ex.sets.map(s=>s.reps).join('/')}`;
-
       let setsHTML = '';
-      ex.sets.forEach((s, si)=>{
+      reps.forEach((repsLabel, si)=>{
         const cur = exProgress[si];
         setsHTML += `
           <div class="set-row ${cur.done?'done':''}" data-day="${day.id}" data-ex="${exi}" data-set="${si}">
             <span class="set-num">S${si+1}</span>
-            <span class="set-target">${s.reps} reps</span>
+            <span class="set-target">${repsLabel} reps</span>
             <div class="set-weight">
               <input type="number" step="0.5" inputmode="decimal"
-                placeholder="${s.w===null?'kg ?':'kg'}"
+                placeholder="${cur.weight===null||cur.weight===undefined?'kg ?':'kg'}"
                 value="${cur.weight!==null && cur.weight!==undefined ? cur.weight : ''}"
                 class="weight-input" />
               <span>kg</span>
@@ -439,7 +651,6 @@ function renderPanels(){
     panels.appendChild(panel);
   });
 
-  // bind events after render
   panels.querySelectorAll('.set-row').forEach(row=>{
     const dayId = row.dataset.day, exi = +row.dataset.ex, si = +row.dataset.set;
     const input = row.querySelector('.weight-input');
@@ -447,12 +658,12 @@ function renderPanels(){
 
     input.addEventListener('change', ()=>{
       const val = input.value === '' ? null : parseFloat(input.value);
-      progress[dayId][exi][si].weight = val;
+      progress.weeks[activeWeek][dayId][exi][si].weight = val;
       saveProgress();
     });
 
     chk.addEventListener('click', ()=>{
-      const cur = progress[dayId][exi][si];
+      const cur = progress.weeks[activeWeek][dayId][exi][si];
       cur.done = !cur.done;
       saveProgress();
       renderAll();
@@ -461,6 +672,9 @@ function renderPanels(){
 }
 
 function renderAll(){
+  renderRotation();
+  renderWeekTabs();
+  renderPhaseStrip();
   renderTabs();
   renderPanels();
 }
@@ -469,7 +683,7 @@ async function apiGet(key){
   const res = await fetch(`/api/storage/${encodeURIComponent(key)}`);
   if(res.status === 404) return null;
   if(!res.ok) throw new Error('GET failed: ' + res.status);
-  return await res.json(); // {key, value}
+  return await res.json();
 }
 
 async function apiSet(key, value){
@@ -503,31 +717,41 @@ async function loadProgress(){
   try{
     const result = await apiGet(STORAGE_KEY);
     if(result && result.value){
-      const parsed = JSON.parse(result.value);
-      // merge with default to survive routine edits
-      const def = defaultProgress();
-      ROUTINE.forEach(day=>{
-        if(!parsed[day.id]) parsed[day.id] = def[day.id];
-        else{
-          day.exercises.forEach((ex, exi)=>{
-            if(!parsed[day.id][exi]) parsed[day.id][exi] = def[day.id][exi];
-          });
-        }
-      });
-      progress = parsed;
+      progress = JSON.parse(result.value);
     } else {
-      progress = defaultProgress();
+      // compatibilidad con la versión vieja (solo semana 1, sin rotación)
+      const legacy = await apiGet(LEGACY_KEY);
+      if(legacy && legacy.value){
+        const legacyParsed = JSON.parse(legacy.value);
+        const fallback = buildWeekProgress(1);
+        const merged = {};
+        ROUTINE.forEach(day=>{
+          merged[day.id] = legacyParsed[day.id] || fallback[day.id];
+        });
+        progress = { weeks:{ 1: merged } };
+      } else {
+        progress = { weeks:{} };
+      }
     }
   }catch(err){
     console.error('Load error:', err);
-    progress = defaultProgress();
+    progress = { weeks:{} };
   }
+  if(!progress.weeks) progress.weeks = {};
+  ensureWeek(1);
+  const today = stripTime(new Date());
+  activeDay = isTrainingDay(today)
+    ? ROTATION_CYCLE[sessionIndexForDate(today) % ROTATION_CYCLE.length]
+    : ROTATION_CYCLE[sessionIndexForDate(nextTrainingDate(today)) % ROTATION_CYCLE.length];
 }
 
 document.getElementById('resetBtn').addEventListener('click', ()=>{
-  if(!confirm('¿Reiniciar el progreso de este día? Se borran pesos y series marcadas.')) return;
-  const def = defaultProgress();
-  progress[activeDay] = def[activeDay];
+  if(!confirm('¿Reiniciar el progreso de este día en esta semana? Se borran pesos y series marcadas.')) return;
+  const day = ROUTINE.find(d=>d.id===activeDay);
+  progress.weeks[activeWeek][activeDay] = day.exercises.map((ex, exi)=>{
+    const reps = getSchemeForWeek(ex, activeWeek);
+    return reps.map((r, si)=>({ weight: getWeightDefault(activeDay, exi, si, activeWeek, ex), done:false }));
+  });
   saveProgress();
   renderAll();
 });
