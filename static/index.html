@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SHIM</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#E8772B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SHIM">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -844,6 +849,11 @@ document.getElementById('cal-next').onclick=()=>{ calOffset++; renderCalendar();
 
 // ---- Boot ---- //
 (async function init(){
+  // Register service worker for PWA install
+  if('serviceWorker' in navigator && window.location.protocol !== 'file:'){
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  }
+
   if(window.location.protocol==='file:'){
     document.getElementById('screen-home').innerHTML='<div class="loading">Abrí la app desde<br><b>shim26.up.railway.app</b></div>';
     return;
