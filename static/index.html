@@ -8,19 +8,22 @@
 <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#1B1A17;
-    --bg-elev:#232220;
-    --bg-elev-2:#2B2A27;
-    --line:#3A3833;
-    --text:#EDEAE2;
-    --text-dim:#A39D90;
-    --text-faint:#6E695F;
+    --bg:#1A1612;
+    --bg-elev:#241E18;
+    --bg-elev-2:#2D261E;
+    --line:#41372A;
+    --text:#F3EAE0;
+    --text-dim:#B3A38E;
+    --text-faint:#7A6C57;
     --plate-red:#C8332B;
-    --plate-blue:#2C5FA8;
+    --plate-blue:#3B7DD8;
     --plate-yellow:#D9A91B;
     --plate-green:#3F8F4F;
     --steel:#8A8D92;
-    --accent:var(--plate-red);
+    --orange:#E8772B;
+    --orange-deep:#B8551A;
+    --accent:var(--orange);
+    --accent-rgb:232,119,43;
     --font-display:'Big Shoulders Display', sans-serif;
     --font-body:'Inter', system-ui, sans-serif;
     --font-mono:'IBM Plex Mono', monospace;
@@ -31,7 +34,7 @@
   html,body{ margin:0; padding:0; }
   body{
     background:
-      radial-gradient(ellipse at top, rgba(255,255,255,0.03), transparent 60%),
+      radial-gradient(ellipse 900px 500px at 50% -10%, rgba(232,119,43,0.10), transparent 65%),
       var(--bg);
     color:var(--text);
     font-family:var(--font-body);
@@ -70,6 +73,10 @@
     margin:0 0 4px;
     line-height:.95;
     text-transform:uppercase;
+    background:linear-gradient(120deg, var(--text) 40%, var(--orange) 105%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
   }
   .subtitle{ color:var(--text-dim); font-size:14px; max-width:46ch; }
 
@@ -101,7 +108,7 @@
     border-radius:5px; background:var(--bg-elev-2); color:var(--text-faint);
     border:1px solid var(--line);
   }
-  .rotation-chip.now{ border-color:var(--accent); color:var(--text); background:rgba(200,51,43,0.12); }
+  .rotation-chip.now{ border-color:var(--accent); color:var(--text); background:rgba(var(--accent-rgb),0.14); }
 
   /* ---------- Week pills ---------- */
   .week-tabs{
@@ -280,7 +287,41 @@
     .week-pill .wn{ font-size:14px; }
     .rotation-day{ font-size:20px; }
   }
-</style>
+  /* ---------- Calendario ---------- */
+  .cal-card{
+    background:var(--bg-elev); border:1px solid var(--line);
+    border-radius:var(--radius); padding:16px; margin-top:22px;
+  }
+  .cal-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+  .cal-month{ font-family:var(--font-display); font-weight:700; font-size:18px; text-transform:capitalize; }
+  .cal-nav{
+    background:var(--bg-elev-2); border:1px solid var(--line); color:var(--text);
+    width:30px; height:30px; border-radius:7px; cursor:pointer; font-size:16px;
+    display:flex; align-items:center; justify-content:center;
+    transition:border-color .15s ease;
+  }
+  .cal-nav:hover{ border-color:var(--orange); }
+  .cal-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+  .cal-dow{
+    text-align:center; font-family:var(--font-mono); font-size:10px;
+    color:var(--text-faint); text-transform:uppercase; padding-bottom:4px;
+  }
+  .cal-cell{
+    aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:var(--bg-elev-2); border-radius:7px; gap:2px;
+  }
+  .cal-cell.outside{ background:transparent; }
+  .cal-cell.today{ outline:1.5px solid var(--text); outline-offset:-1.5px; }
+  .cal-date{ font-family:var(--font-mono); font-size:11px; color:var(--text-dim); }
+  .cal-tag{
+    font-family:var(--font-mono); font-size:8px; font-weight:700;
+    padding:1px 4px; border-radius:4px; color:#1A1612; letter-spacing:.02em;
+  }
+  .cal-legend{ display:flex; gap:16px; margin-top:12px; font-family:var(--font-mono); font-size:11px; color:var(--text-dim); }
+  .cal-legend span{ display:flex; align-items:center; gap:6px; }
+  .cal-legend i{ width:9px; height:9px; border-radius:3px; display:inline-block; }
+
+
 </head>
 <body>
 <div class="wrap">
@@ -314,6 +355,19 @@
   <div class="actions">
     <div class="save-state" id="saveState"></div>
     <button class="reset-btn" id="resetBtn">Reiniciar día actual</button>
+  </div>
+
+  <div class="cal-card">
+    <div class="cal-header">
+      <button class="cal-nav" id="calPrev">‹</button>
+      <span class="cal-month" id="calMonthLabel">—</span>
+      <button class="cal-nav" id="calNext">›</button>
+    </div>
+    <div class="cal-grid" id="calGrid"></div>
+    <div class="cal-legend">
+      <span><i style="background:var(--orange)"></i> Torso</span>
+      <span><i style="background:var(--plate-blue)"></i> Pierna</span>
+    </div>
   </div>
 
   <div class="notes">
@@ -495,8 +549,10 @@ function isTrainingDay(date){
 function sessionIndexForDate(targetDate){
   // 0-based: cuántos días de entrenamiento pasaron desde el ancla hasta esta fecha (inclusive)
   if(!isTrainingDay(targetDate)) return null;
-  let cur = stripTime(CYCLE_ANCHOR);
   const target = stripTime(targetDate);
+  const anchor = stripTime(CYCLE_ANCHOR);
+  if(target.getTime() < anchor.getTime()) return null; // antes de que arrancara el ciclo
+  let cur = new Date(anchor);
   let idx = 0;
   while(cur.getTime() !== target.getTime()){
     cur.setDate(cur.getDate()+1);
@@ -756,11 +812,71 @@ document.getElementById('resetBtn').addEventListener('click', ()=>{
   renderAll();
 });
 
+let calendarMonthOffset = 0;
+const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+
+function renderCalendar(){
+  const base = stripTime(new Date());
+  const viewDate = new Date(base.getFullYear(), base.getMonth() + calendarMonthOffset, 1);
+  const year = viewDate.getFullYear(), month = viewDate.getMonth();
+  document.getElementById('calMonthLabel').textContent = `${MONTH_NAMES[month]} ${year}`;
+
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month+1, 0);
+  const firstWeekday = (firstDay.getDay() + 6) % 7; // 0=lunes .. 6=domingo
+  const totalDays = lastDay.getDate();
+
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+
+  ['L','M','M','J','V','S','D'].forEach(d=>{
+    const el = document.createElement('div');
+    el.className = 'cal-dow';
+    el.textContent = d;
+    grid.appendChild(el);
+  });
+
+  for(let i=0;i<firstWeekday;i++){
+    const el = document.createElement('div');
+    el.className = 'cal-cell outside';
+    grid.appendChild(el);
+  }
+
+  for(let d=1; d<=totalDays; d++){
+    const cellDate = new Date(year, month, d);
+    const cell = document.createElement('div');
+    cell.className = 'cal-cell' + (cellDate.getTime()===base.getTime() ? ' today' : '');
+
+    let tagHTML = '';
+    if(isTrainingDay(cellDate) && sessionIndexForDate(cellDate) !== null){
+      const idx = sessionIndexForDate(cellDate) % ROTATION_CYCLE.length;
+      const dId = ROTATION_CYCLE[idx];
+      const isTorso = dId==='dia1' || dId==='dia3';
+      const color = isTorso ? 'var(--orange)' : 'var(--plate-blue)';
+      const abbr = ROUTINE.find(x=>x.id===dId).name.replace('Torso ','T').replace('Pierna ','P');
+      tagHTML = `<span class="cal-tag" style="background:${color}">${abbr}</span>`;
+    }
+
+    cell.innerHTML = `<span class="cal-date">${d}</span>${tagHTML}`;
+    grid.appendChild(cell);
+  }
+}
+
+document.getElementById('calPrev').addEventListener('click', ()=>{ calendarMonthOffset--; renderCalendar(); });
+document.getElementById('calNext').addEventListener('click', ()=>{ calendarMonthOffset++; renderCalendar(); });
+
 (async function init(){
   const panels = document.getElementById('panels');
+
+  if(window.location.protocol === 'file:'){
+    panels.innerHTML = '<div class="loading" style="line-height:1.8">Esta app necesita el backend para funcionar.<br>Abrila desde <b>shim26.up.railway.app</b>, no como archivo local.</div>';
+    return;
+  }
+
   panels.innerHTML = '<div class="loading">Cargando bitácora…</div>';
   await loadProgress();
   renderAll();
+  renderCalendar();
 })();
 </script>
 </body>
