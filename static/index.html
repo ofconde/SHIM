@@ -417,14 +417,14 @@ const ROUTINE = [
     { name:'Jalón en polea con soga (tríceps)', standard:true, sets:[{reps:'12',w:40},{reps:'10',w:40},{reps:'8',w:40},{reps:'8',w:45}] },
     { name:'Curl con barra EZ (bíceps)', standard:true, sets:[{reps:'12',w:10},{reps:'10',w:15},{reps:'8',w:20},{reps:'8',w:20}] },
   ]},
-  { id:'dia2', num:'Día 2', name:'Pierna A', exercises:[
+  { id:'dia2', num:'Día 3', name:'Pierna A', exercises:[
     { name:'Sentadilla', standard:true, sets:[{reps:'12',w:40},{reps:'10',w:50},{reps:'8',w:55},{reps:'8',w:60}] },
     { name:'Prensa 45°', standard:true, sets:[{reps:'12',w:60},{reps:'10',w:65},{reps:'8',w:70},{reps:'8',w:80}] },
     { name:'Sentadilla hack', note:'liviano, ajustar en sesión', standard:true, sets:[{reps:'12',w:null},{reps:'10',w:null},{reps:'8',w:null},{reps:'8',w:null}] },
     { name:'Femoral de pie en máquina', note:'liviano, ajustar en sesión', standard:false, sets:[{reps:'12',w:null},{reps:'12',w:null},{reps:'12',w:null}] },
     { name:'Gemelos de pie en máquina', standard:false, sets:[{reps:'20',w:90},{reps:'20',w:90},{reps:'20',w:90}] },
   ]},
-  { id:'dia3', num:'Día 3', name:'Torso B', exercises:[
+  { id:'dia3', num:'Día 2', name:'Torso B', exercises:[
     { name:'Press militar con barra', standard:true, sets:[{reps:'12',w:20},{reps:'10',w:20},{reps:'8',w:25},{reps:'8',w:25}] },
     { name:'Remo con barra EZ supino', note:'peso x lado', standard:true, sets:[{reps:'12',w:7.5},{reps:'10',w:10},{reps:'8',w:12.5},{reps:'8',w:15}] },
     { name:'Press plano con mancuernas', standard:true, sets:[{reps:'12',w:13},{reps:'10',w:16},{reps:'8',w:16},{reps:'8',w:16}] },
@@ -451,7 +451,7 @@ const WEEKS = [
 ];
 
 const ROTATION_CYCLE = ['dia1','dia3','dia2','dia1','dia3','dia4'];
-const CYCLE_ANCHOR = new Date(2026,5,19);
+const CYCLE_ANCHOR = new Date(2026,6,21); // Lunes 21/7 — reinicio
 const STORAGE_KEY = 'entreno-fuerza:ciclo';
 const LEGACY_KEY  = 'entreno-fuerza:semana1';
 const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
