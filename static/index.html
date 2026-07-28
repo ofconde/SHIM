@@ -279,6 +279,15 @@ h1{
 .nrow:last-child{ margin-bottom:0; }
 .ndot{ color:var(--blue); flex-shrink:0; }
 
+.day-btn.current-session{ border-color:var(--orange); }
+.complete-session-btn{
+  width:100%; margin-top:20px; padding:14px;
+  background:var(--green); border:none; border-radius:var(--r);
+  color:#fff; font-family:var(--font-m); font-weight:600; font-size:13px;
+  cursor:pointer; transition:filter .15s;
+}
+.complete-session-btn:hover{ filter:brightness(1.1); }
+
 /* ---- Utility ---- */
 .loading{ color:var(--text-dim); font-family:var(--font-m); font-size:13px; padding:40px 0; text-align:center; }
 
@@ -373,6 +382,7 @@ h1{
     <div class="scroll" id="session-scroll">
       <div class="session-meta" id="session-phase-meta">—</div>
       <div id="exercise-list"></div>
+      <button class="complete-session-btn" id="complete-session-btn">✓ Sesión completada — ir a la siguiente</button>
     </div>
   </div>
 
@@ -451,14 +461,12 @@ const WEEKS = [
 ];
 
 const ROTATION_CYCLE = ['dia1','dia3','dia2','dia1','dia3','dia4'];
-const CYCLE_ANCHOR = new Date(2026,6,21); // Lunes 21/7 — reinicio
 const STORAGE_KEY = 'entreno-fuerza:ciclo';
 const LEGACY_KEY  = 'entreno-fuerza:semana1';
 const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-const DOW_NAMES   = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
 // ---- State ---- //
-let progress    = {weeks:{}};
+let progress    = {weeks:{}, rotationPointer:0};
 let activeWeek  = 1;
 let activeDay   = 'dia1';
 let activeExIdx = 0;
@@ -492,23 +500,6 @@ function goBack(){
 
 // ---- Date helpers ---- //
 function stripTime(d){ return new Date(d.getFullYear(),d.getMonth(),d.getDate()); }
-function isTrainingDay(d){ const w=d.getDay(); return w===1||w===2||w===3||w===5; }
-function sessionIndexForDate(d){
-  if(!isTrainingDay(d)) return null;
-  const target=stripTime(d), anchor=stripTime(CYCLE_ANCHOR);
-  if(target.getTime()<anchor.getTime()) return null;
-  let cur=new Date(anchor), idx=0;
-  while(cur.getTime()!==target.getTime()){
-    cur.setDate(cur.getDate()+1);
-    if(isTrainingDay(cur)) idx++;
-  }
-  return idx;
-}
-function nextTrainingDate(from){
-  const d=stripTime(from); d.setDate(d.getDate()+1);
-  while(!isTrainingDay(d)) d.setDate(d.getDate()+1);
-  return d;
-}
 
 // ---- Week/progress helpers ---- //
 function getSchemeForWeek(ex,wn){
@@ -607,7 +598,11 @@ async function loadProgress(){
     }
   }catch(e){ progress={weeks:{}}; }
   if(!progress.weeks) progress.weeks={};
-  ensureWeek(1);
+  if(progress.rotationPointer===undefined||progress.rotationPointer===null) progress.rotationPointer=0;
+  activeDay=ROTATION_CYCLE[progress.rotationPointer%ROTATION_CYCLE.length];
+  activeWeek=Math.floor(progress.rotationPointer/4)+1;
+  if(activeWeek>5) activeWeek=5;
+  ensureWeek(activeWeek);
 }
 
 // ---- Check icon ---- //
@@ -615,36 +610,21 @@ const CHECK_ICON=`<svg viewBox="0 0 16 16" fill="none"><path d="M3 8.5L6.2 11.5L
 
 // ---- Render: Home ---- //
 function renderHome(){
-  const today=stripTime(new Date());
-  const trainToday=isTrainingDay(today);
-  let curDayId,subLabel,rotSub;
-  if(trainToday){
-    const idx=sessionIndexForDate(today)%ROTATION_CYCLE.length;
-    curDayId=ROTATION_CYCLE[idx];
-    subLabel='Hoy toca';
-    rotSub='';
-  } else {
-    const nd=nextTrainingDate(today);
-    const idx=sessionIndexForDate(nd)%ROTATION_CYCLE.length;
-    curDayId=ROTATION_CYCLE[idx];
-    subLabel='Descanso — próxima sesión';
-    rotSub=`${DOW_NAMES[nd.getDay()]} ${nd.getDate()}/${nd.getMonth()+1}`;
-  }
+  const ptr=progress.rotationPointer%ROTATION_CYCLE.length;
+  const curDayId=ROTATION_CYCLE[ptr];
   const curDay=ROUTINE.find(d=>d.id===curDayId);
-  document.getElementById('rot-sublabel').textContent=subLabel;
+  const sessionNum=progress.rotationPointer+1;
+  document.getElementById('rot-sublabel').textContent=`Sesión ${sessionNum}`;
   document.getElementById('rot-day-name').textContent=curDay.name;
-  document.getElementById('rot-sub').textContent=rotSub;
-  document.getElementById('go-today-btn').textContent=trainToday?`Abrir sesión de hoy →`:`Ver próxima sesión (${curDay.name}) →`;
+  document.getElementById('rot-sub').textContent='';
+  document.getElementById('go-today-btn').textContent=`Abrir ${curDay.name} →`;
   document.getElementById('go-today-btn').onclick=()=>navigate('session',{day:curDayId});
 
-  const highlightIdx=trainToday
-    ?sessionIndexForDate(today)%ROTATION_CYCLE.length
-    :sessionIndexForDate(nextTrainingDate(today))%ROTATION_CYCLE.length;
   const track=document.getElementById('rot-track');
   track.innerHTML='';
   ROTATION_CYCLE.forEach((dId,i)=>{
     const chip=document.createElement('span');
-    chip.className='rot-chip'+(i===highlightIdx?' now':'');
+    chip.className='rot-chip'+(i===ptr?' now':'');
     chip.textContent=ROUTINE.find(x=>x.id===dId).name;
     track.appendChild(chip);
   });
@@ -665,13 +645,17 @@ function renderHome(){
 
   const dbuts=document.getElementById('day-buttons');
   dbuts.innerHTML='';
-  ROUTINE.forEach(day=>{
+  // Calculate current session number from anchor
+  ROTATION_CYCLE.forEach((dayId, offset)=>{
+    const day=ROUTINE.find(d=>d.id===dayId);
+    const sNum=progress.rotationPointer+offset+1;
     const {total,done}=dayProgress(day.id,activeWeek);
     const pct=total?Math.round(done/total*100):0;
+    const isCurrent=offset===0;
     const btn=document.createElement('div');
-    btn.className='day-btn';
+    btn.className='day-btn'+(isCurrent?' current-session':'');
     btn.innerHTML=`
-      <span class="dnum">${day.num}</span>
+      <span class="dnum">Sesión ${sNum}</span>
       <span class="dname">${day.name}</span>
       <div class="dprog">
         <div class="dprog-bar"><div class="dprog-fill" style="width:${pct}%"></div></div>
@@ -728,6 +712,8 @@ function renderSession(){
   ensureWeek(activeWeek);
   const day=ROUTINE.find(d=>d.id===activeDay);
   const w=WEEKS.find(x=>x.n===activeWeek);
+  const _cidx=ROTATION_CYCLE.indexOf(activeDay);
+  const _snum=progress.rotationPointer+1;
   document.getElementById('session-title').textContent=day.name;
   document.getElementById('session-meta').textContent=`S${activeWeek}`;
   document.getElementById('session-phase-meta').textContent=`${w.label} · RIR ${w.rir} · Cadencia 1/0/2`;
@@ -844,6 +830,12 @@ function renderProgressChart(){
 // ---- Event listeners ---- //
 document.getElementById('session-back').onclick=goBack;
 document.getElementById('ex-back').onclick=goBack;
+document.getElementById('complete-session-btn').onclick=()=>{
+  progress.rotationPointer=(progress.rotationPointer+1);
+  saveProgress();
+  goBack();
+  renderHome();
+};
 document.getElementById('cal-prev').onclick=()=>{ calOffset--; renderCalendar(); };
 document.getElementById('cal-next').onclick=()=>{ calOffset++; renderCalendar(); };
 
