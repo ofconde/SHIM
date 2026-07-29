@@ -865,11 +865,19 @@ document.getElementById('cal-next').onclick=()=>{ calOffset++; renderCalendar();
     document.getElementById('screen-home').innerHTML='<div class="loading">Abrí la app desde<br><b>shim26.up.railway.app</b></div>';
     return;
   }
-  await loadProgress();
-  renderHome();
-  // Remove splash immediately after load
+  // Remove splash first so user sees something
   const sp = document.getElementById('splash');
   if(sp){ sp.remove(); }
+
+  await loadProgress();
+
+  if(!ROUTINE || !ROUTINE.length){
+    document.getElementById('screen-home').innerHTML =
+      '<div style="padding:60px 20px;text-align:center;font-family:monospace;color:#B3A38E">Error cargando rutina.<br>Revisá conexión y recargá.</div>';
+    return;
+  }
+
+  renderHome();
 })();
 </script>
 </body>
