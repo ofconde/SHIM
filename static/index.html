@@ -417,50 +417,11 @@ h1{
 
 <script>
 // ---- Data ---- //
-const ROUTINE = [
-  { id:'dia1', num:'Día 1', name:'Torso A', exercises:[
-    { name:'Press inclinado con barra', note:'Smith o barra libre 20/25 x lado', standard:true, sets:[{reps:'12',w:30},{reps:'10',w:30},{reps:'8',w:40},{reps:'8',w:40}] },
-    { name:'Jalón al frente agarre abierto', standard:true, sets:[{reps:'12',w:45},{reps:'10',w:50},{reps:'8',w:55},{reps:'8',w:60}] },
-    { name:'Apertura mancuernas banco plano', standard:true, sets:[{reps:'12',w:11.5},{reps:'10',w:11.5},{reps:'8',w:13},{reps:'8',w:13}] },
-    { name:'Remo bajo en polea prono abierto', standard:true, sets:[{reps:'12',w:45},{reps:'10',w:50},{reps:'8',w:56},{reps:'8',w:60}] },
-    { name:'Vuelo lateral con mancuernas', standard:true, sets:[{reps:'12',w:9},{reps:'10',w:11.5},{reps:'8',w:11.5},{reps:'8',w:13}] },
-    { name:'Jalón en polea con soga (tríceps)', standard:true, sets:[{reps:'12',w:40},{reps:'10',w:40},{reps:'8',w:40},{reps:'8',w:45}] },
-    { name:'Curl con barra EZ (bíceps)', standard:true, sets:[{reps:'12',w:10},{reps:'10',w:15},{reps:'8',w:20},{reps:'8',w:20}] },
-  ]},
-  { id:'dia2', num:'Día 3', name:'Pierna A', exercises:[
-    { name:'Sentadilla', standard:true, sets:[{reps:'12',w:40},{reps:'10',w:50},{reps:'8',w:55},{reps:'8',w:60}] },
-    { name:'Prensa 45°', standard:true, sets:[{reps:'12',w:60},{reps:'10',w:65},{reps:'8',w:70},{reps:'8',w:80}] },
-    { name:'Sentadilla hack', note:'liviano, ajustar en sesión', standard:true, sets:[{reps:'12',w:null},{reps:'10',w:null},{reps:'8',w:null},{reps:'8',w:null}] },
-    { name:'Femoral de pie en máquina', note:'liviano, ajustar en sesión', standard:false, sets:[{reps:'12',w:null},{reps:'12',w:null},{reps:'12',w:null}] },
-    { name:'Gemelos de pie en máquina', standard:false, sets:[{reps:'20',w:90},{reps:'20',w:90},{reps:'20',w:90}] },
-  ]},
-  { id:'dia3', num:'Día 2', name:'Torso B', exercises:[
-    { name:'Press militar con barra', standard:true, sets:[{reps:'12',w:20},{reps:'10',w:20},{reps:'8',w:25},{reps:'8',w:25}] },
-    { name:'Remo con barra EZ supino', note:'peso x lado', standard:true, sets:[{reps:'12',w:7.5},{reps:'10',w:10},{reps:'8',w:12.5},{reps:'8',w:15}] },
-    { name:'Press plano con mancuernas', standard:true, sets:[{reps:'12',w:13},{reps:'10',w:16},{reps:'8',w:16},{reps:'8',w:16}] },
-    { name:'Jalón al frente agarre neutro cerrado', standard:true, sets:[{reps:'12',w:50},{reps:'10',w:50},{reps:'8',w:55},{reps:'8',w:55}] },
-    { name:'Vuelo posterior banco inclinado', standard:true, sets:[{reps:'12',w:9},{reps:'10',w:12.5},{reps:'8',w:12.5},{reps:'8',w:16}] },
-    { name:'Press francés barra EZ inclinado', standard:true, sets:[{reps:'12',w:10},{reps:'10',w:15},{reps:'8',w:15},{reps:'8',w:20}] },
-    { name:'Curl martillo con mancuernas', standard:true, sets:[{reps:'12',w:11.5},{reps:'10',w:13},{reps:'8',w:13},{reps:'8',w:16}] },
-  ]},
-  { id:'dia4', num:'Día 4', name:'Pierna B', exercises:[
-    { name:'Hip thrust con barra', note:'arrancar conservador y subir', standard:true, sets:[{reps:'12',w:20},{reps:'10',w:20},{reps:'8',w:20},{reps:'8',w:20}] },
-    { name:'Camilla femoral', standard:true, sets:[{reps:'12',w:35},{reps:'10',w:40},{reps:'8',w:45},{reps:'8',w:45}] },
-    { name:'Zancadas con mancuernas', note:'por pierna', standard:false, sets:[{reps:'10-12',w:8},{reps:'10-12',w:8},{reps:'10-12',w:10}] },
-    { name:'Prensa 45° pies arriba', standard:false, sets:[{reps:'12',w:50},{reps:'12',w:55},{reps:'12',w:60}] },
-    { name:'Gemelos sentado en máquina', note:'ajustar en sesión', standard:false, sets:[{reps:'15-20',w:null},{reps:'15-20',w:null},{reps:'15-20',w:null}] },
-  ]},
-];
+// ROUTINE, WEEKS and ROTATION_CYCLE are loaded from /api/routine on init
+let ROUTINE = [];
+let WEEKS   = [];
+let ROTATION_CYCLE = [];
 
-const WEEKS = [
-  {n:1,label:'Acumulación',rir:'2–3'},
-  {n:2,label:'Acumulación',rir:'2'},
-  {n:3,label:'Intensificación',rir:'1–2'},
-  {n:4,label:'Intensificación',rir:'1'},
-  {n:5,label:'Descarga',rir:'4–5'},
-];
-
-const ROTATION_CYCLE = ['dia1','dia3','dia2','dia1','dia3','dia4'];
 const STORAGE_KEY = 'entreno-fuerza:ciclo';
 const LEGACY_KEY  = 'entreno-fuerza:semana1';
 const MONTH_NAMES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
@@ -576,6 +537,17 @@ function saveProgress(){
   },300);
 }
 async function loadProgress(){
+  // Fetch routine from server (lives in DB, no deploy needed to change it)
+  try{
+    const rd = await fetch('/api/routine');
+    if(rd.ok){
+      const rj = await rd.json();
+      ROUTINE        = rj.routine;
+      WEEKS          = rj.weeks;
+      ROTATION_CYCLE = rj.rotation;
+    }
+  }catch(e){ console.error('Could not load routine:', e); }
+
   try{
     const r=await apiGet(STORAGE_KEY);
     if(r&&r.value){
