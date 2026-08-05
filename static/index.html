@@ -621,6 +621,25 @@ async function loadProgress(){
   activeDay=ROTATION_CYCLE[progress.rotationPointer%ROTATION_CYCLE.length];
   activeWeek=Math.floor(progress.rotationPointer/4)+1;
   if(activeWeek>5) activeWeek=5;
+
+  // Fix: ensure all exercises exist for all stored weeks
+  // (handles cases where ROUTINE changed after data was saved)
+  Object.keys(progress.weeks).forEach(wn=>{
+    const wNum=parseInt(wn);
+    ROUTINE.forEach(day=>{
+      if(!progress.weeks[wn][day.id]) progress.weeks[wn][day.id]=[];
+      const reps=getSchemeForWeek(day.exercises[0]||{standard:true}, wNum);
+      day.exercises.forEach((ex,exi)=>{
+        if(!progress.weeks[wn][day.id][exi]){
+          const exReps=getSchemeForWeek(ex,wNum);
+          progress.weeks[wn][day.id][exi]=exReps.map((_,si)=>({
+            weight:getWeightDefault(day.id,exi,si,wNum,ex),done:false
+          }));
+        }
+      });
+    });
+  });
+
   ensureWeek(activeWeek);
 }
 
