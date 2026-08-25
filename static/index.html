@@ -619,8 +619,8 @@ async function loadProgress(){
   if(!progress.weeks) progress.weeks={};
   if(progress.rotationPointer===undefined||progress.rotationPointer===null) progress.rotationPointer=0;
   activeDay=ROTATION_CYCLE[progress.rotationPointer%ROTATION_CYCLE.length];
-  activeWeek=Math.floor(progress.rotationPointer/4)+1;
-  if(activeWeek>5) activeWeek=5;
+  activeWeek=Math.floor(progress.rotationPointer/6)+1;
+  if(activeWeek>5) activeWeek=1; // restart mesocycle
 
   // Fix: ensure all exercises exist for all stored weeks
   // (handles cases where ROUTINE changed after data was saved)
@@ -887,6 +887,24 @@ document.getElementById('session-back').onclick=goBack;
 document.getElementById('ex-back').onclick=goBack;
 document.getElementById('complete-session-btn').onclick=()=>{
   progress.rotationPointer=(progress.rotationPointer+1);
+  
+  // Auto-advance week every 6 sessions
+  const sessionsPerWeek = 6;
+  const newWeek = Math.floor(progress.rotationPointer / sessionsPerWeek) + 1;
+  if(newWeek !== activeWeek && newWeek <= 5){
+    activeWeek = newWeek;
+    const wName = WEEKS.find(w=>w.n===newWeek)?.label || '';
+    setTimeout(()=>{
+      alert('¡Semana ' + newWeek + ' — ' + wName + '! Subiste un escalón.');
+    }, 300);
+  } else if(newWeek > 5){
+    // Completed full mesocycle - restart
+    activeWeek = 1;
+    setTimeout(()=>{
+      alert('¡Mesociclo completo! Arrancás un nuevo ciclo desde S1.');
+    }, 300);
+  }
+  
   saveProgress();
   goBack();
   renderHome();
