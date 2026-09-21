@@ -310,7 +310,8 @@ async def analyze_meal(
     except anthropic.RateLimitError:
         raise HTTPException(status_code=429, detail="límite de uso de la API, probá en un minuto")
     except anthropic.APIStatusError as e:
-        raise HTTPException(status_code=502, detail=f"error de la API ({e.status_code})")
+        print(f"[nutrition/analyze] Anthropic {e.status_code}: {e.message}", flush=True)
+        raise HTTPException(status_code=502, detail=f"error de la API ({e.status_code}): {e.message[:300]}")
     except anthropic.APIConnectionError:
         raise HTTPException(status_code=502, detail="no se pudo conectar con la API")
 
