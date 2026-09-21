@@ -173,7 +173,11 @@ def get_anthropic() -> anthropic.Anthropic:
     if _anthropic_client is None:
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY no configurada")
-        _anthropic_client = anthropic.Anthropic()
+        # Si la key es de organización (no de un workspace), Anthropic exige
+        # indicar el workspace por header. Se configura con ANTHROPIC_WORKSPACE_ID.
+        ws = os.environ.get("ANTHROPIC_WORKSPACE_ID")
+        headers = {"anthropic-workspace-id": ws} if ws else None
+        _anthropic_client = anthropic.Anthropic(default_headers=headers)
     return _anthropic_client
 
 
