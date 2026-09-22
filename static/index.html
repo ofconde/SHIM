@@ -590,7 +590,7 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
 
       <div class="card" id="add-meal-card">
         <div class="card-title">Agregar comida</div>
-        <textarea class="meal-input" id="meal-text" rows="2" placeholder="¿Qué comiste? Ej: 2 huevos revueltos, 150g arroz y una pechuga…"></textarea>
+        <textarea class="meal-input" id="meal-text" rows="2" placeholder="¿Qué comiste? Ej: 2 huevos, 150g pollo, 100g arroz…"></textarea>
         <input type="file" id="meal-photo" accept="image/*" capture="environment" hidden>
         <div class="photo-preview" id="photo-preview" hidden>
           <img id="photo-img" alt="">
@@ -1324,7 +1324,7 @@ document.getElementById('analyze-btn').onclick=async()=>{
 };
 function showResult(j){
   document.getElementById('r-name').textContent=j.name;
-  document.getElementById('r-conf').textContent=`Confianza ${j.confidence} · ${j.source==='photo'?'foto':'texto'}`;
+  document.getElementById('r-conf').textContent=`Confianza ${j.confidence} · ${j.source==='photo'?'foto':'texto'} · ${j.engine==='local'?'tabla local':'Gemini'}`;
   document.getElementById('r-items').innerHTML=(j.items||[]).map(i=>`<li>${esc(i)}</li>`).join('');
   document.getElementById('r-kcal').value=Math.round(j.kcal);
   document.getElementById('r-p').value=Math.round(j.protein_g);

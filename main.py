@@ -1,10 +1,11 @@
 import os
 import json
 import base64
+import re
 from datetime import datetime, date
 from typing import Optional
 
-import anthropic
+import httpx
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -141,44 +142,168 @@ ANALYZE_SYSTEM = (
     "y estimás calorías y macronutrientes de la porción completa que se ve o se describe. "
     "Si la porción es ambigua, asumí una porción estándar de adulto y decilo en las notas. "
     "Redondeá kcal a múltiplos de 5 y gramos a enteros. Respondé siempre en español rioplatense, "
-    "breve y directo, sin moralizar.\n\n" + USER_PROFILE
+    "breve y directo, sin moralizar. Respondé únicamente con el JSON pedido.\n\n" + USER_PROFILE
 )
 
+# Esquema de respuesta (formato OpenAPI que acepta Gemini en responseSchema)
 ANALYZE_SCHEMA = {
-    "type": "object",
+    "type": "OBJECT",
     "properties": {
-        "name": {"type": "string", "description": "Nombre corto de la comida, ej. 'Pollo con arroz y ensalada'"},
-        "items": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "Componentes detectados con porción estimada, ej. '150 g pechuga de pollo'",
-        },
-        "kcal": {"type": "number"},
-        "protein_g": {"type": "number"},
-        "carbs_g": {"type": "number"},
-        "fat_g": {"type": "number"},
-        "confidence": {"type": "string", "enum": ["alta", "media", "baja"]},
-        "notes": {"type": "string", "description": "Una o dos frases: supuestos de porción y un consejo concreto según los macros objetivo del día."},
+        "name": {"type": "STRING", "description": "Nombre corto de la comida, ej. 'Pollo con arroz y ensalada'"},
+        "items": {"type": "ARRAY", "items": {"type": "STRING"},
+                  "description": "Componentes detectados con porción estimada, ej. '150 g pechuga de pollo'"},
+        "kcal": {"type": "NUMBER"},
+        "protein_g": {"type": "NUMBER"},
+        "carbs_g": {"type": "NUMBER"},
+        "fat_g": {"type": "NUMBER"},
+        "confidence": {"type": "STRING", "enum": ["alta", "media", "baja"]},
+        "notes": {"type": "STRING", "description": "Una o dos frases: supuestos de porción y un consejo concreto según los macros objetivo del día."},
     },
     "required": ["name", "items", "kcal", "protein_g", "carbs_g", "fat_g", "confidence", "notes"],
-    "additionalProperties": False,
 }
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-_anthropic_client: Optional[anthropic.Anthropic] = None
+
+# ---- Motor 1: Gemini (plan gratuito de Google AI Studio) ----
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 
-def get_anthropic() -> anthropic.Anthropic:
-    global _anthropic_client
-    if _anthropic_client is None:
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY no configurada")
-        # Si la key es de organización (no de un workspace), Anthropic exige
-        # indicar el workspace por header. Se configura con ANTHROPIC_WORKSPACE_ID.
-        ws = os.environ.get("ANTHROPIC_WORKSPACE_ID")
-        headers = {"anthropic-workspace-id": ws} if ws else None
-        _anthropic_client = anthropic.Anthropic(default_headers=headers)
-    return _anthropic_client
+async def analyze_with_gemini(parts: list, api_key: str) -> dict:
+    body = {
+        "systemInstruction": {"parts": [{"text": ANALYZE_SYSTEM}]},
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": ANALYZE_SCHEMA,
+            "temperature": 0.2,
+        },
+    }
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(GEMINI_URL, params={"key": api_key}, json=body)
+    if r.status_code != 200:
+        try:
+            msg = r.json().get("error", {}).get("message", r.text)
+        except Exception:
+            msg = r.text
+        print(f"[nutrition/analyze] Gemini {r.status_code}: {msg[:300]}", flush=True)
+        raise RuntimeError(f"Gemini {r.status_code}: {msg[:200]}")
+    data = r.json()
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError):
+        raise RuntimeError("respuesta vacía de Gemini")
+    return json.loads(text)
+
+
+# ---- Motor 2: tabla local (sin internet, sin key) ----
+# Valores por 100 g (o por unidad si "unit_g" define el peso de una unidad).
+# kcal, prot, carb, grasa
+FOOD_DB = {
+    "pollo":        {"alias": ["pechuga", "pollo", "muslo"],                "per100": (165, 31, 0, 3.6), "unit_g": None},
+    "huevo":        {"alias": ["huevo", "huevos"],                          "per100": (143, 12.6, 0.7, 9.5), "unit_g": 55},
+    "clara":        {"alias": ["clara", "claras"],                          "per100": (52, 11, 0.7, 0.2), "unit_g": 33},
+    "arroz":        {"alias": ["arroz"],                                    "per100": (130, 2.7, 28, 0.3), "unit_g": None},
+    "papa":         {"alias": ["papa", "papas", "pure", "puré"],            "per100": (87, 1.9, 20, 0.1), "unit_g": 150},
+    "batata":       {"alias": ["batata", "batatas"],                        "per100": (90, 2, 21, 0.1), "unit_g": 150},
+    "yogur":        {"alias": ["yogur", "yogurt", "yoghurt"],               "per100": (60, 4, 6, 2), "unit_g": 180},
+    "yogur griego": {"alias": ["griego"],                                   "per100": (97, 9, 4, 5), "unit_g": 150},
+    "avena":        {"alias": ["avena"],                                    "per100": (380, 13, 66, 7), "unit_g": None},
+    "pan":          {"alias": ["pan", "tostada", "tostadas", "rebanada", "rodaja"], "per100": (265, 9, 49, 3.2), "unit_g": 30},
+    "pan integral": {"alias": ["integral"],                                 "per100": (250, 12, 43, 3.5), "unit_g": 30},
+    "queso untable":{"alias": ["untable", "casancrem", "finlandia"],        "per100": (250, 7, 4, 23), "unit_g": 20},
+    "queso":        {"alias": ["queso", "muzzarella", "mozzarella", "cremoso"], "per100": (300, 22, 2, 23), "unit_g": 30},
+    "carne":        {"alias": ["carne", "bife", "nalga", "lomo", "cuadril", "vacio", "vacío", "asado", "churrasco"], "per100": (200, 26, 0, 10), "unit_g": None},
+    "carne picada": {"alias": ["picada", "hamburguesa"],                    "per100": (250, 26, 0, 17), "unit_g": 120},
+    "cerdo":        {"alias": ["cerdo", "bondiola", "matambre"],            "per100": (240, 27, 0, 14), "unit_g": None},
+    "pescado":      {"alias": ["pescado", "merluza", "salmon", "salmón", "atun", "atún"], "per100": (120, 24, 0, 2.5), "unit_g": None},
+    "milanesa":     {"alias": ["milanesa", "milanesas", "milas"],           "per100": (250, 18, 18, 12), "unit_g": 150},
+    "empanada":     {"alias": ["empanada", "empanadas"],                    "per100": (270, 10, 28, 13), "unit_g": 90},
+    "pizza":        {"alias": ["pizza", "porcion de pizza"],                "per100": (265, 11, 33, 10), "unit_g": 120},
+    "fideos":       {"alias": ["fideos", "pasta", "tallarines", "ñoquis", "noquis", "ravioles"], "per100": (155, 5.5, 30, 1), "unit_g": None},
+    "lentejas":     {"alias": ["lentejas", "garbanzos", "porotos"],         "per100": (115, 9, 20, 0.4), "unit_g": None},
+    "ensalada":     {"alias": ["ensalada", "lechuga", "tomate", "verduras", "vegetales", "brocoli", "brócoli", "zanahoria", "zapallito", "espinaca"], "per100": (25, 1.5, 4, 0.2), "unit_g": 100},
+    "palta":        {"alias": ["palta", "aguacate"],                        "per100": (160, 2, 9, 15), "unit_g": 100},
+    "banana":       {"alias": ["banana", "bananas"],                        "per100": (89, 1.1, 23, 0.3), "unit_g": 120},
+    "manzana":      {"alias": ["manzana", "manzanas", "pera", "naranja", "mandarina", "durazno", "fruta"], "per100": (52, 0.3, 14, 0.2), "unit_g": 150},
+    "leche":        {"alias": ["leche"],                                    "per100": (50, 3.3, 4.8, 1.6), "unit_g": None},
+    "whey":         {"alias": ["whey", "proteina", "proteína", "scoop"],    "per100": (380, 75, 8, 5), "unit_g": 30},
+    "aceite":       {"alias": ["aceite", "manteca"],                        "per100": (880, 0, 0, 100), "unit_g": 10},
+    "mani":         {"alias": ["mani", "maní", "almendras", "nueces", "frutos secos"], "per100": (600, 22, 16, 50), "unit_g": 30},
+    "medialuna":    {"alias": ["medialuna", "medialunas", "factura", "facturas"], "per100": (400, 7, 50, 19), "unit_g": 45},
+    "galletitas":   {"alias": ["galletita", "galletitas", "galletas"],      "per100": (450, 7, 68, 16), "unit_g": 8},
+    "cerveza":      {"alias": ["cerveza", "birra"],                         "per100": (43, 0.5, 3.5, 0), "unit_g": None},
+    "vino":         {"alias": ["vino"],                                     "per100": (85, 0, 2.5, 0), "unit_g": None},
+    "gaseosa":      {"alias": ["gaseosa", "coca", "jugo"],                  "per100": (42, 0, 10.5, 0), "unit_g": None},
+    "chocolate":    {"alias": ["chocolate", "alfajor", "alfajores"],        "per100": (500, 6, 55, 28), "unit_g": 50},
+    "mate":         {"alias": ["mate", "cafe", "café", "te", "té", "agua"], "per100": (2, 0, 0.5, 0), "unit_g": 200},
+}
+# Índice alias → clave, con los alias más largos primero para que "pan integral" gane sobre "pan"
+_FOOD_INDEX = sorted(((a, k) for k, v in FOOD_DB.items() for a in v["alias"]), key=lambda t: -len(t[0]))
+
+_NUM = r"(\d+(?:[.,]\d+)?)"
+_QTY_RE = re.compile(
+    rf"(?:{_NUM}\s*(kg|kilo|g|gr|grs|gramos|ml|cc|taza|tazas|cda|cdas|cucharada|cucharadas|scoop|scoops|unidad|unidades|u)?\b)"
+    r"|(?:\b(un|una|uno|dos|tres|cuatro|cinco|seis|medio|media|1/2)\b)",
+    re.IGNORECASE,
+)
+_WORD_NUM = {"un": 1, "una": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "seis": 6, "medio": 0.5, "media": 0.5, "1/2": 0.5}
+_UNIT_ML = {"ml", "cc"}
+_UNIT_G = {"g", "gr", "grs", "gramos"}
+_CUP_G = 150      # taza de arroz/fideos/leche cocidos aprox
+_SPOON_G = 12     # cucharada
+
+
+def _grams_for(qty: float, unit: Optional[str], food: dict) -> float:
+    unit = (unit or "").lower()
+    if unit in _UNIT_G or unit in _UNIT_ML:
+        return qty
+    if unit in ("kg", "kilo"):
+        return qty * 1000
+    if unit in ("taza", "tazas"):
+        return qty * _CUP_G
+    if unit in ("cda", "cdas", "cucharada", "cucharadas"):
+        return qty * _SPOON_G
+    # unidades (o sin unidad): usa el peso por unidad si existe, si no asume porción de 100 g
+    return qty * (food["unit_g"] or 100)
+
+
+def analyze_locally(text: str) -> dict:
+    segments = [seg.strip() for seg in re.split(r"[,;\n]|\by\b|\bcon\b|\+", text, flags=re.IGNORECASE) if seg.strip()]
+    items, unknown = [], []
+    tot = [0.0, 0.0, 0.0, 0.0]
+    for seg in segments:
+        low = seg.lower()
+        key = next((k for a, k in _FOOD_INDEX if re.search(rf"\b{re.escape(a)}\b", low)), None)
+        if not key:
+            unknown.append(seg)
+            continue
+        food = FOOD_DB[key]
+        qty, unit = 1.0, None
+        m = _QTY_RE.search(low)
+        if m:
+            if m.group(1):
+                qty = float(m.group(1).replace(",", "."))
+                unit = m.group(2)
+            elif m.group(3):
+                qty = _WORD_NUM[m.group(3).lower()]
+        grams = _grams_for(qty, unit, food)
+        k, pr, cb, ft = food["per100"]
+        f = grams / 100
+        tot[0] += k * f; tot[1] += pr * f; tot[2] += cb * f; tot[3] += ft * f
+        items.append(f"{round(grams)} g {key}")
+    if not items:
+        raise ValueError("no reconocí ningún alimento; probá con 'cantidad + alimento', ej. '150g pollo, 2 huevos'")
+    name = " + ".join(i.split(" g ", 1)[1] for i in items[:3]).capitalize()
+    notes = "Estimado con tabla local (sin foto)."
+    if unknown:
+        notes += " No reconocí: " + ", ".join(unknown[:3]) + "."
+    return {
+        "name": name, "items": items,
+        "kcal": round(tot[0] / 5) * 5, "protein_g": round(tot[1]),
+        "carbs_g": round(tot[2]), "fat_g": round(tot[3]),
+        "confidence": "baja" if unknown else "media", "notes": notes,
+    }
 
 
 def parse_day(value: Optional[str]) -> date:
@@ -268,7 +393,7 @@ def update_routine(payload: ValuePayload, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-# ---- Nutrition: analyze (Claude vision) ----
+# ---- Nutrition: analyze (Gemini gratis, con fallback a tabla local) ----
 @app.post("/api/nutrition/analyze")
 async def analyze_meal(
     image: Optional[UploadFile] = File(None),
@@ -276,10 +401,11 @@ async def analyze_meal(
     consumed: Optional[str] = Form(None),  # JSON con lo ya comido hoy, para el consejo
 ):
     """Estima kcal y macros de una comida a partir de foto y/o texto. No guarda nada."""
-    if image is None and not (text and text.strip()):
+    text = (text or "").strip()
+    if image is None and not text:
         raise HTTPException(status_code=400, detail="mandá una foto o una descripción")
 
-    content = []
+    parts = []
     if image is not None:
         media_type = image.content_type or "image/jpeg"
         if media_type not in ALLOWED_IMAGE_TYPES:
@@ -287,46 +413,37 @@ async def analyze_meal(
         raw = await image.read()
         if len(raw) > 8 * 1024 * 1024:
             raise HTTPException(status_code=413, detail="imagen muy grande (máx 8 MB)")
-        content.append({
-            "type": "image",
-            "source": {"type": "base64", "media_type": media_type,
-                       "data": base64.standard_b64encode(raw).decode("utf-8")},
-        })
+        parts.append({"inline_data": {"mime_type": media_type, "data": base64.standard_b64encode(raw).decode("utf-8")}})
 
     prompt = "Analizá esta comida y estimá kcal y macros de la porción completa."
-    if text and text.strip():
-        prompt += f"\n\nDescripción del usuario: {text.strip()}"
+    if text:
+        prompt += f"\n\nDescripción del usuario: {text}"
     if consumed:
         prompt += f"\n\nYa consumido hoy (para el consejo en notas): {consumed}"
-    content.append({"type": "text", "text": prompt})
+    parts.append({"text": prompt})
 
-    client = get_anthropic()
+    source = "photo" if image is not None else "text"
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    gemini_error = None
+    if gemini_key:
+        try:
+            data = await analyze_with_gemini(parts, gemini_key)
+            data.update(source=source, engine="gemini")
+            return data
+        except (RuntimeError, httpx.HTTPError, json.JSONDecodeError, KeyError) as e:
+            gemini_error = str(e)
+
+    # Fallback local: solo sirve con texto
+    if not text:
+        detail = "para analizar fotos hace falta GEMINI_API_KEY" if not gemini_key else f"no pude analizar la foto ({gemini_error})"
+        raise HTTPException(status_code=503, detail=detail)
     try:
-        response = client.messages.create(
-            model="claude-opus-5",
-            max_tokens=2048,
-            system=ANALYZE_SYSTEM,
-            messages=[{"role": "user", "content": content}],
-            output_config={"effort": "medium", "format": {"type": "json_schema", "schema": ANALYZE_SCHEMA}},
-        )
-    except anthropic.AuthenticationError:
-        raise HTTPException(status_code=503, detail="ANTHROPIC_API_KEY inválida")
-    except anthropic.RateLimitError:
-        raise HTTPException(status_code=429, detail="límite de uso de la API, probá en un minuto")
-    except anthropic.APIStatusError as e:
-        print(f"[nutrition/analyze] Anthropic {e.status_code}: {e.message}", flush=True)
-        raise HTTPException(status_code=502, detail=f"error de la API ({e.status_code}): {e.message[:300]}")
-    except anthropic.APIConnectionError:
-        raise HTTPException(status_code=502, detail="no se pudo conectar con la API")
-
-    if response.stop_reason == "refusal":
-        raise HTTPException(status_code=422, detail="no pude analizar esa imagen")
-
-    text_block = next((b.text for b in response.content if b.type == "text"), None)
-    if not text_block:
-        raise HTTPException(status_code=502, detail="respuesta vacía del modelo")
-    data = json.loads(text_block)
-    data["source"] = "photo" if image is not None else "text"
+        data = analyze_locally(text)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if gemini_error:
+        data["notes"] += f" (Gemini falló: {gemini_error[:80]})"
+    data.update(source=source, engine="local")
     return data
 
 
