@@ -166,8 +166,9 @@ ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 # ---- Motor 1: Gemini (plan gratuito de Google AI Studio) ----
 # Se prueban en orden; si uno da 404 (retirado) o 503 (saturado) se pasa al siguiente.
+# flash-lite primero: responde en 2-3 s en el plan gratuito; los grandes tardan 10-30 s.
 GEMINI_MODELS = [m.strip() for m in os.environ.get(
-    "GEMINI_MODELS", "gemini-3.8-flash,gemini-3.5-flash,gemini-3.5-flash-lite"
+    "GEMINI_MODELS", "gemini-3.5-flash-lite,gemini-3.8-flash,gemini-3.5-flash"
 ).split(",") if m.strip()]
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
@@ -180,6 +181,8 @@ async def analyze_with_gemini(parts: list, api_key: str) -> dict:
             "responseMimeType": "application/json",
             "responseSchema": ANALYZE_SCHEMA,
             "temperature": 0.2,
+            # Sin razonamiento largo: para estimar macros no aporta y multiplica la latencia.
+            "thinkingConfig": {"thinkingLevel": "minimal"},
         },
     }
     last_err = "sin modelos configurados"
