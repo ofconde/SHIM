@@ -1285,6 +1285,7 @@ document.getElementById('cal-next').onclick=()=>{ calOffset++; renderCalendar();
 // =====================================================================
 const TARGETS = {kcal:2000, protein_g:190, carbs_g:155, fat_g:60};
 let nutDate   = stripTime(new Date());
+let lastKnownToday = nutDate;   // para detectar cuándo pasa la medianoche con la app abierta
 let nutMeals  = [];
 let pendingPhoto = null;   // Blob (JPEG comprimido) listo para subir
 let pendingResult = null;  // resultado del análisis aún no guardado
@@ -1745,6 +1746,27 @@ document.getElementById('w-save').onclick=async()=>{
 };
 
 // ---- Boot ---- //
+// ---- Corte de medianoche con la app abierta ---- //
+// Si dejás la PWA abierta de un día para el otro, nutDate (la pantalla de
+// Nutrición) se queda clavado en el día viejo hasta que se detecta el
+// cambio de fecha real. Sin esto, una comida cargada a las 23:50 sigue
+// apareciendo bajo el rótulo "Hoy" después de medianoche.
+function checkDayRollover(){
+  const real = stripTime(new Date());
+  if(real.getTime() === lastKnownToday.getTime()) return;
+  const wasOnToday = nutDate.getTime() === lastKnownToday.getTime();
+  lastKnownToday = real;
+  if(wasOnToday){
+    nutDate = real;
+    if(screenStack[0]==='nutrition') renderNutrition();
+  }
+  if(screenStack[0]==='progress') renderProgress();
+  if(screenStack[0]==='home') renderHome();
+}
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkDayRollover(); });
+window.addEventListener('focus', checkDayRollover);
+setInterval(checkDayRollover, 5*60*1000); // respaldo si la app queda despierta toda la noche
+
 (async function init(){
   // Register service worker for PWA install
   if('serviceWorker' in navigator && window.location.protocol !== 'file:'){
