@@ -53,6 +53,29 @@ class Weight(Base):
     created_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class WorkoutLog(Base):
+    """Sesión de pesas completada en un día real del calendario (distinto del
+    contador de rotación interno, que no tiene fecha)."""
+    __tablename__ = "workout_log"
+    day = Column(Date, primary_key=True)
+    day_id = Column(String, nullable=False)     # ej. "dia3"
+    day_name = Column(String, nullable=False)   # ej. "Pierna A"
+    week_n = Column(Integer)                    # ej. 5
+    week_label = Column(String)                 # ej. "Descarga"
+    created_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class DailyLog(Base):
+    """Datos sueltos del día que no tienen tabla propia: pasos y una mini
+    valoración subjetiva, para armar un registro diario completo."""
+    __tablename__ = "daily_log"
+    day = Column(Date, primary_key=True)
+    steps = Column(Integer)
+    mood = Column(Integer)          # 1 (mal) a 5 (excelente)
+    note = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -574,6 +597,142 @@ def delete_weight(day: str, db: Session = Depends(get_db)):
         db.delete(w)
         db.commit()
     return {"date": d.isoformat(), "deleted": True}
+
+
+# ---- Registro diario (entrenamiento + pasos + valoración) ----
+# Pensado para poder mostrarle el día completo a una nutricionista: qué se
+# entrenó, cuántos pasos, qué se comió y una mini autoevaluación.
+class WorkoutLogPayload(BaseModel):
+    date: Optional[str] = None
+    day_id: str
+    day_name: str
+    week_n: Optional[int] = None
+    week_label: Optional[str] = None
+
+
+@app.post("/api/workout-log")
+def log_workout(payload: WorkoutLogPayload, db: Session = Depends(get_db)):
+    day = parse_day(payload.date)
+    w = db.query(WorkoutLog).filter(WorkoutLog.day == day).first()
+    if w:
+        w.day_id = payload.day_id
+        w.day_name = payload.day_name
+        w.week_n = payload.week_n
+        w.week_label = payload.week_label
+    else:
+        w = WorkoutLog(day=day, day_id=payload.day_id, day_name=payload.day_name,
+                        week_n=payload.week_n, week_label=payload.week_label)
+        db.add(w)
+    db.commit()
+    return {"date": day.isoformat(), "day_name": payload.day_name, "ok": True}
+
+
+class DailyLogPayload(BaseModel):
+    date: Optional[str] = None
+    steps: Optional[int] = None
+    mood: Optional[int] = None   # 1-5
+    note: Optional[str] = None
+
+
+@app.post("/api/log/day")
+def save_daily_log(payload: DailyLogPayload, db: Session = Depends(get_db)):
+    if payload.mood is not None and not (1 <= payload.mood <= 5):
+        raise HTTPException(status_code=400, detail="mood debe ser 1-5")
+    day = parse_day(payload.date)
+    d = db.query(DailyLog).filter(DailyLog.day == day).first()
+    if d:
+        if payload.steps is not None: d.steps = payload.steps
+        if payload.mood is not None: d.mood = payload.mood
+        if payload.note is not None: d.note = payload.note
+    else:
+        d = DailyLog(day=day, steps=payload.steps, mood=payload.mood, note=payload.note)
+        db.add(d)
+    db.commit()
+    return {"date": day.isoformat(), "ok": True}
+
+
+def _build_day_log(db: Session, day: date) -> dict:
+    meals = db.query(Meal).filter(Meal.day == day).order_by(Meal.created_at.asc()).all()
+    meal_dicts = [meal_to_dict(m) for m in meals]
+    totals = {
+        "kcal": round(sum(m["kcal"] for m in meal_dicts)),
+        "protein_g": round(sum(m["protein_g"] for m in meal_dicts)),
+        "carbs_g": round(sum(m["carbs_g"] for m in meal_dicts)),
+        "fat_g": round(sum(m["fat_g"] for m in meal_dicts)),
+    }
+    weight = db.query(Weight).filter(Weight.day == day).first()
+    workout = db.query(WorkoutLog).filter(WorkoutLog.day == day).first()
+    daily = db.query(DailyLog).filter(DailyLog.day == day).first()
+    return {
+        "date": day.isoformat(),
+        "meals": meal_dicts,
+        "totals": totals,
+        "targets": NUTRITION_TARGETS,
+        "weight_kg": weight.kg if weight else None,
+        "workout": ({"day_name": workout.day_name, "week_n": workout.week_n,
+                      "week_label": workout.week_label} if workout else None),
+        "steps": daily.steps if daily else None,
+        "mood": daily.mood if daily else None,
+        "note": daily.note if daily else None,
+    }
+
+
+@app.get("/api/log/day")
+def get_day_log(date: Optional[str] = None, db: Session = Depends(get_db)):
+    return _build_day_log(db, parse_day(date))
+
+
+@app.get("/api/log/history")
+def get_log_history(days: int = 14, db: Session = Depends(get_db)):
+    days = max(1, min(days, 90))
+    today = date.today()
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = date.fromordinal(today.toordinal() - i)
+        entry = _build_day_log(db, d)
+        # Solo días con algo cargado, para no llenar el historial de vacíos
+        if entry["meals"] or entry["weight_kg"] or entry["workout"] or entry["steps"] or entry["mood"] or entry["note"]:
+            out.append(entry)
+    return {"days": out}
+
+
+@app.get("/api/log/export")
+def export_day_log(days: int = 14, db: Session = Depends(get_db)):
+    """Texto plano listo para copiar y mandarle a una nutricionista."""
+    days = max(1, min(days, 90))
+    today = date.today()
+    lines = [f"Registro SHIM — últimos {days} días", ""]
+    any_data = False
+    for i in range(days - 1, -1, -1):
+        d = date.fromordinal(today.toordinal() - i)
+        e = _build_day_log(db, d)
+        if not (e["meals"] or e["weight_kg"] or e["workout"] or e["steps"] or e["mood"] or e["note"]):
+            continue
+        any_data = True
+        lines.append(f"## {d.isoformat()}")
+        if e["weight_kg"] is not None:
+            lines.append(f"Peso: {e['weight_kg']} kg")
+        if e["workout"]:
+            w = e["workout"]
+            wk = f" (semana {w['week_n']} · {w['week_label']})" if w.get("week_n") else ""
+            lines.append(f"Entrenamiento: {w['day_name']}{wk}")
+        else:
+            lines.append("Entrenamiento: descanso")
+        if e["meals"]:
+            t = e["totals"]
+            lines.append(f"Comidas ({t['kcal']} kcal · P{t['protein_g']} C{t['carbs_g']} G{t['fat_g']}):")
+            for m in e["meals"]:
+                lines.append(f"  - {m['name']} — {round(m['kcal'])} kcal (P{round(m['protein_g'])} C{round(m['carbs_g'])} G{round(m['fat_g'])})")
+        if e["steps"] is not None:
+            lines.append(f"Pasos: {e['steps']}")
+        if e["mood"] is not None:
+            lines.append(f"Valoración del día: {e['mood']}/5" + (f" — {e['note']}" if e["note"] else ""))
+        elif e["note"]:
+            lines.append(f"Nota: {e['note']}")
+        lines.append("")
+    if not any_data:
+        lines.append("(sin datos en el rango)")
+    return {"text": "\n".join(lines)}
 
 
 # ---------- Static (last) ----------

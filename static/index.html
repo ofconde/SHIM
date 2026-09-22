@@ -459,6 +459,36 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
 .weight-row .wk{ font-family:var(--font-d); font-weight:700; font-size:18px; }
 .weight-row .wdiff{ font-size:10px; min-width:44px; text-align:right; }
 
+/* ---- Registro diario ---- */
+.today-workout{ display:flex; align-items:center; gap:10px; padding:10px 12px; background:var(--bg-elev-2); border-radius:8px; margin-bottom:12px; }
+.today-workout .tw-dot{ width:8px; height:8px; border-radius:50%; background:var(--text-faint); flex-shrink:0; }
+.today-workout.done .tw-dot{ background:var(--green); box-shadow:0 0 6px var(--green); }
+.today-workout .tw-txt{ font-family:var(--font-m); font-size:12px; color:var(--text-dim); }
+.today-workout .tw-txt b{ color:var(--text); font-weight:500; }
+.field-label{ font-family:var(--font-m); font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.08em; margin:12px 0 6px; }
+.field-label:first-child{ margin-top:0; }
+.mood-row{ display:flex; gap:6px; }
+.mood-btn{
+  flex:1; padding:9px 0; border-radius:8px; cursor:pointer; font-size:19px; text-align:center;
+  background:var(--bg-elev-2); border:1px solid var(--line); transition:border-color .15s, background .15s;
+}
+.mood-btn.active{ border-color:var(--orange); background:rgba(var(--accent-rgb),.14); }
+.note-input{
+  width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text);
+  font-family:var(--font-b); font-size:13px; border-radius:8px; padding:9px 10px;
+  resize:none; min-height:44px; line-height:1.4;
+}
+.note-input:focus{ outline:2px solid var(--orange); outline-offset:1px; border-color:var(--orange); }
+.note-input::placeholder{ color:var(--text-faint); }
+.log-row{ padding:10px 0; border-bottom:1px solid var(--line); font-size:13px; }
+.log-row:last-child{ border-bottom:none; padding-bottom:0; }
+.log-row-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px; }
+.log-row-date{ font-family:var(--font-m); font-size:11px; color:var(--text-dim); text-transform:capitalize; }
+.log-row-mood{ font-size:15px; }
+.log-row-detail{ font-family:var(--font-m); font-size:10px; color:var(--text-faint); line-height:1.6; }
+.log-row-detail b{ color:var(--text-dim); font-weight:500; }
+.log-row-note{ font-size:12px; color:var(--text-dim); margin-top:3px; font-style:italic; }
+
 @media (prefers-reduced-motion:reduce){
   *{ animation:none !important; transition:none !important; }
 }
@@ -646,6 +676,29 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
         <div class="sec-head"><h2>Progreso</h2></div>
       </div>
 
+      <div class="card" id="today-log-card">
+        <div class="card-title">Registro de hoy</div>
+        <div class="today-workout" id="today-workout">
+          <span class="tw-dot"></span><span class="tw-txt">Cargando…</span>
+        </div>
+        <div class="field-label">Pasos</div>
+        <input type="number" inputmode="numeric" id="steps-input" placeholder="Ej: 8500">
+        <div class="field-label">¿Cómo te sentiste hoy?</div>
+        <div class="mood-row" id="mood-row">
+          <button class="mood-btn" data-mood="1">😞</button>
+          <button class="mood-btn" data-mood="2">🙁</button>
+          <button class="mood-btn" data-mood="3">😐</button>
+          <button class="mood-btn" data-mood="4">🙂</button>
+          <button class="mood-btn" data-mood="5">😄</button>
+        </div>
+        <div class="field-label">Nota (opcional)</div>
+        <textarea class="note-input" id="daylog-note" rows="2" placeholder="Energía, sueño, digestión, antojos…"></textarea>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn primary" id="daylog-save">Guardar registro de hoy</button>
+        </div>
+        <div class="error-msg" id="daylog-error" hidden></div>
+      </div>
+
       <div class="card">
         <div class="weight-hero">
           <div class="wstat"><div class="ml">Actual</div><div class="mv" id="w-now">—<small> kg</small></div><div class="ms" id="w-now-sub"></div></div>
@@ -675,6 +728,14 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
       <div class="card">
         <div class="card-title">Registros</div>
         <div id="weight-list"><div class="empty">Sin registros todavía.</div></div>
+      </div>
+
+      <div class="card">
+        <div class="sec-head" style="margin-bottom:10px">
+          <div class="card-title" style="margin-bottom:0">Historial diario</div>
+          <button class="btn ghost" id="log-copy-btn" style="flex:none; padding:7px 12px; font-size:11px">Copiar para nutricionista</button>
+        </div>
+        <div id="daily-log-list"><div class="empty">Sin datos todavía.</div></div>
       </div>
     </div>
   </div>
@@ -1169,7 +1230,17 @@ function renderProgressChart(){
 // ---- Event listeners ---- //
 document.getElementById('session-back').onclick=goBack;
 document.getElementById('ex-back').onclick=goBack;
+function logWorkoutCompletion(){
+  const day=ROUTINE.find(d=>d.id===activeDay);
+  const w=WEEKS.find(x=>x.n===activeWeek);
+  if(!day) return;
+  fetch('/api/workout-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    date:isoDate(new Date()), day_id:day.id, day_name:day.name,
+    week_n:activeWeek, week_label:w?w.label:null,
+  })}).catch(()=>{});
+}
 document.getElementById('complete-session-btn').onclick=()=>{
+  logWorkoutCompletion();
   progress.rotationPointer=(progress.rotationPointer+1);
   
   // Auto-advance week every 6 sessions
@@ -1398,7 +1469,105 @@ async function renderProgress(){
     renderWeightList();
     if(hr.ok) renderKcalBars(await hr.json());
   }catch(e){ console.error(e); }
+  renderTodayLog();
+  renderDailyLogHistory();
 }
+
+// ---- Registro de hoy (entrenamiento + pasos + valoración) ---- //
+let selectedMood=null;
+document.querySelectorAll('.mood-btn').forEach(b=>b.onclick=()=>{
+  selectedMood = selectedMood===Number(b.dataset.mood) ? null : Number(b.dataset.mood);
+  document.querySelectorAll('.mood-btn').forEach(x=>x.classList.toggle('active', Number(x.dataset.mood)===selectedMood));
+});
+async function renderTodayLog(){
+  const tw=document.getElementById('today-workout');
+  try{
+    const r=await fetch(`/api/log/day?date=${isoDate(new Date())}`);
+    const j=await r.json();
+    if(j.workout){
+      tw.classList.add('done');
+      const wk=j.workout.week_n?` · Semana ${j.workout.week_n} (${j.workout.week_label})`:'';
+      tw.querySelector('.tw-txt').innerHTML=`Entrenaste hoy: <b>${esc(j.workout.day_name)}</b>${esc(wk)}`;
+    } else {
+      tw.classList.remove('done');
+      tw.querySelector('.tw-txt').textContent='Sin entrenamiento registrado hoy';
+    }
+    document.getElementById('steps-input').value=j.steps??'';
+    document.getElementById('daylog-note').value=j.note||'';
+    selectedMood=j.mood??null;
+    document.querySelectorAll('.mood-btn').forEach(x=>x.classList.toggle('active', Number(x.dataset.mood)===selectedMood));
+  }catch(e){
+    tw.querySelector('.tw-txt').textContent='No se pudo cargar el registro de hoy.';
+  }
+}
+document.getElementById('daylog-save').onclick=async()=>{
+  const err=document.getElementById('daylog-error');
+  err.hidden=true;
+  const stepsVal=document.getElementById('steps-input').value;
+  const btn=document.getElementById('daylog-save'); btn.disabled=true;
+  try{
+    const r=await fetch('/api/log/day',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      date:isoDate(new Date()),
+      steps:stepsVal===''?null:parseInt(stepsVal,10),
+      mood:selectedMood,
+      note:document.getElementById('daylog-note').value.trim()||null,
+    })});
+    if(!r.ok) throw new Error(r.status);
+    await renderDailyLogHistory();
+  }catch(e){ err.textContent='No se pudo guardar.'; err.hidden=false; }
+  finally{ btn.disabled=false; }
+};
+function moodEmoji(m){ return {1:'😞',2:'🙁',3:'😐',4:'🙂',5:'😄'}[m]||''; }
+async function renderDailyLogHistory(){
+  const el=document.getElementById('daily-log-list');
+  try{
+    const r=await fetch('/api/log/history?days=14');
+    const j=await r.json();
+    const days=[...j.days].reverse();
+    if(!days.length){ el.innerHTML='<div class="empty">Sin datos todavía.</div>'; return; }
+    el.innerHTML='';
+    days.forEach(d=>{
+      const row=document.createElement('div');
+      row.className='log-row';
+      const dLbl=new Date(d.date+'T00:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}).replace('.','');
+      const parts=[];
+      if(d.workout) parts.push(`<b>🏋️ ${esc(d.workout.day_name)}</b>`);
+      if(d.weight_kg!=null) parts.push(`${d.weight_kg} kg`);
+      if(d.totals.kcal) parts.push(`${d.totals.kcal} kcal (P${d.totals.protein_g} C${d.totals.carbs_g} G${d.totals.fat_g})`);
+      if(d.steps!=null) parts.push(`${d.steps} pasos`);
+      row.innerHTML=`
+        <div class="log-row-head">
+          <span class="log-row-date">${dLbl}</span>
+          <span class="log-row-mood">${moodEmoji(d.mood)}</span>
+        </div>
+        <div class="log-row-detail">${parts.join(' · ')||'Sin datos'}</div>
+        ${d.note?`<div class="log-row-note">"${esc(d.note)}"</div>`:''}`;
+      el.appendChild(row);
+    });
+  }catch(e){
+    el.innerHTML='<div class="empty">No se pudo cargar el historial.</div>';
+  }
+}
+document.getElementById('log-copy-btn').onclick=async()=>{
+  const btn=document.getElementById('log-copy-btn');
+  const original=btn.textContent;
+  try{
+    const r=await fetch('/api/log/export?days=30');
+    const j=await r.json();
+    if(navigator.clipboard && window.isSecureContext){
+      await navigator.clipboard.writeText(j.text);
+    } else {
+      const ta=document.createElement('textarea');
+      ta.value=j.text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    btn.textContent='Copiado ✓';
+  }catch(e){
+    btn.textContent='Error al copiar';
+  }
+  setTimeout(()=>{ btn.textContent=original; },2000);
+};
 function renderWeightHero(){
   const g=weightData.goal, es=weightData.entries;
   const last=es[es.length-1];
