@@ -539,6 +539,31 @@ def delete_meal(meal_id: int, db: Session = Depends(get_db)):
     return {"id": meal_id, "deleted": True}
 
 
+@app.get("/api/nutrition/recent")
+def recent_meals(limit: int = 12, db: Session = Depends(get_db)):
+    """Comidas ya cargadas, para agregarlas de nuevo con un toque (ej. el
+    batido de proteína de siempre). Deduplicadas por nombre, ordenadas por
+    cuántas veces se repitieron y luego por la más reciente."""
+    limit = max(1, min(limit, 30))
+    rows = db.query(Meal).order_by(Meal.created_at.desc()).limit(500).all()
+    agg: dict[str, dict] = {}
+    for m in rows:
+        key = m.name.strip().lower()
+        if key not in agg:
+            agg[key] = {
+                "name": m.name, "items": json.loads(m.items) if m.items else [],
+                "kcal": m.kcal, "protein_g": m.protein_g, "carbs_g": m.carbs_g, "fat_g": m.fat_g,
+                "count": 0, "last_used": m.created_at,
+            }
+        agg[key]["count"] += 1
+    ordered = sorted(agg.values(), key=lambda x: x["last_used"], reverse=True)
+    ordered.sort(key=lambda x: x["count"], reverse=True)  # sort estable: desempata por recencia
+    ordered = ordered[:limit]
+    for e in ordered:
+        e["last_used"] = e["last_used"].isoformat()
+    return {"meals": ordered}
+
+
 @app.get("/api/nutrition/history")
 def nutrition_history(days: int = 14, db: Session = Depends(get_db)):
     """Totales diarios de los últimos N días (para la pantalla de progreso)."""

@@ -368,6 +368,18 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
 .macro.g .bar > i{ background:var(--steel); }
 
 /* ---- Add meal ---- */
+.quick-add-row{ display:flex; gap:8px; overflow-x:auto; padding-bottom:2px; margin-bottom:10px; -webkit-overflow-scrolling:touch; }
+.quick-add-row::-webkit-scrollbar{ display:none; }
+.quick-chip{
+  flex:none; display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+  max-width:150px; padding:7px 11px; border-radius:10px; cursor:pointer;
+  background:var(--bg-elev-2); border:1px solid var(--line);
+  transition:border-color .15s, opacity .15s;
+}
+.quick-chip:active{ transform:scale(.97); }
+.quick-chip.added{ border-color:var(--green); opacity:.55; pointer-events:none; }
+.quick-chip .qc-name{ font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:128px; }
+.quick-chip .qc-macro{ font-family:var(--font-m); font-size:9px; color:var(--text-faint); white-space:nowrap; }
 .meal-input{
   width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text);
   font-family:var(--font-b); font-size:14px; border-radius:8px; padding:11px 12px;
@@ -620,6 +632,7 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
 
       <div class="card" id="add-meal-card">
         <div class="card-title">Agregar comida</div>
+        <div class="quick-add-row" id="quick-add-row" hidden></div>
         <textarea class="meal-input" id="meal-text" rows="2" placeholder="¿Qué comiste? Ej: 2 huevos, 150g pollo, 100g arroz…"></textarea>
         <input type="file" id="meal-camera" accept="image/*" capture="environment" hidden>
         <input type="file" id="meal-photo" accept="image/*" hidden>
@@ -1300,6 +1313,47 @@ async function renderNutrition(){
   }catch(e){
     document.getElementById('meals-list').innerHTML='<div class="empty">No se pudieron cargar las comidas.</div>';
   }
+  loadRecentMeals();
+}
+
+// ---- Agregar rápido: reusar una comida ya cargada antes (ej. el batido de siempre) ---- //
+async function loadRecentMeals(){
+  const row=document.getElementById('quick-add-row');
+  try{
+    const r=await fetch('/api/nutrition/recent?limit=10');
+    if(!r.ok) throw new Error(r.status);
+    const j=await r.json();
+    renderQuickAdd(j.meals||[]);
+  }catch(e){
+    row.hidden=true; row.innerHTML='';
+  }
+}
+function renderQuickAdd(meals){
+  const row=document.getElementById('quick-add-row');
+  if(!meals.length){ row.hidden=true; row.innerHTML=''; return; }
+  row.hidden=false;
+  row.innerHTML='';
+  meals.forEach(m=>{
+    const chip=document.createElement('div');
+    chip.className='quick-chip';
+    chip.innerHTML=`<span class="qc-name">${esc(m.name)}</span><span class="qc-macro">${Math.round(m.kcal)} kcal · P${Math.round(m.protein_g)}</span>`;
+    chip.onclick=()=>quickAddMeal(m,chip);
+    row.appendChild(chip);
+  });
+}
+async function quickAddMeal(m,chipEl){
+  chipEl.classList.add('added');
+  try{
+    const r=await fetch('/api/nutrition/meals',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      date:isoDate(nutDate), name:m.name, items:m.items||[],
+      kcal:m.kcal, protein_g:m.protein_g, carbs_g:m.carbs_g, fat_g:m.fat_g, source:'quick',
+    })});
+    if(!r.ok) throw new Error(r.status);
+    await renderNutrition();
+  }catch(e){
+    chipEl.classList.remove('added');
+    showAnalyzeError('No se pudo agregar.');
+  }
 }
 function renderMacroSummary(t){
   const left=TARGETS.kcal-t.kcal;
@@ -1323,7 +1377,7 @@ function renderMealsList(){
     row.innerHTML=`
       <div class="meal-info">
         <div class="meal-name">${esc(m.name)}</div>
-        <div class="meal-macros">P <b>${Math.round(m.protein_g)}</b> · C <b>${Math.round(m.carbs_g)}</b> · G <b>${Math.round(m.fat_g)}</b>${m.source==='photo'?' · 📷':''}</div>
+        <div class="meal-macros">P <b>${Math.round(m.protein_g)}</b> · C <b>${Math.round(m.carbs_g)}</b> · G <b>${Math.round(m.fat_g)}</b>${m.source==='photo'?' · 📷':m.source==='quick'?' · ⚡':''}</div>
       </div>
       <div class="meal-kcal">${Math.round(m.kcal)}</div>
       <button class="meal-del" title="Eliminar">✕</button>`;
