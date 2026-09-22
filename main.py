@@ -2,7 +2,7 @@ import os
 import json
 import base64
 import re
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 
 import httpx
@@ -345,9 +345,20 @@ def analyze_locally(text: str) -> dict:
     }
 
 
+# El servidor corre en UTC (Railway), pero el corte de "día" tiene que ser el
+# de Argentina, no el de Londres. Argentina está fija en UTC-3 desde 2009
+# (sin horario de verano), así que un offset fijo es exacto y no depende de
+# que el contenedor tenga datos de huso horario (tzdata) instalados.
+AR_OFFSET = timedelta(hours=-3)
+
+
+def today_ar() -> date:
+    return (datetime.utcnow() + AR_OFFSET).date()
+
+
 def parse_day(value: Optional[str]) -> date:
     if not value:
-        return date.today()
+        return today_ar()
     try:
         return date.fromisoformat(value)
     except ValueError:
@@ -710,7 +721,7 @@ def get_day_log(date: Optional[str] = None, db: Session = Depends(get_db)):
 @app.get("/api/log/history")
 def get_log_history(days: int = 14, db: Session = Depends(get_db)):
     days = max(1, min(days, 90))
-    today = date.today()
+    today = today_ar()
     out = []
     for i in range(days - 1, -1, -1):
         d = date.fromordinal(today.toordinal() - i)
@@ -725,7 +736,7 @@ def get_log_history(days: int = 14, db: Session = Depends(get_db)):
 def export_day_log(days: int = 14, db: Session = Depends(get_db)):
     """Texto plano listo para copiar y mandarle a una nutricionista."""
     days = max(1, min(days, 90))
-    today = date.today()
+    today = today_ar()
     lines = [f"Registro SHIM — últimos {days} días", ""]
     any_data = False
     for i in range(days - 1, -1, -1):
