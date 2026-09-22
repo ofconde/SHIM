@@ -591,16 +591,23 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
       <div class="card" id="add-meal-card">
         <div class="card-title">Agregar comida</div>
         <textarea class="meal-input" id="meal-text" rows="2" placeholder="¿Qué comiste? Ej: 2 huevos, 150g pollo, 100g arroz…"></textarea>
-        <input type="file" id="meal-photo" accept="image/*" capture="environment" hidden>
+        <input type="file" id="meal-camera" accept="image/*" capture="environment" hidden>
+        <input type="file" id="meal-photo" accept="image/*" hidden>
         <div class="photo-preview" id="photo-preview" hidden>
           <img id="photo-img" alt="">
           <button id="photo-clear" title="Quitar foto">✕</button>
         </div>
         <div class="btn-row">
-          <button class="btn" id="photo-btn">
+          <button class="btn" id="camera-btn">
             <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v12H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
-            Foto
+            Cámara
           </button>
+          <button class="btn" id="photo-btn">
+            <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5-6 6-2-2-5 5"/></svg>
+            Galería
+          </button>
+        </div>
+        <div class="btn-row">
           <button class="btn primary" id="analyze-btn">Analizar</button>
         </div>
         <div class="analyzing" id="analyzing" hidden><div class="spinner"></div><span>Estimando kcal y macros…</span></div>
@@ -1286,13 +1293,19 @@ function setPhoto(blob){
     document.getElementById('photo-img').removeAttribute('src');
   }
 }
+// Dos inputs: "Cámara" fuerza la cámara (capture), "Galería" abre el selector de archivos.
+document.getElementById('camera-btn').onclick=()=>document.getElementById('meal-camera').click();
 document.getElementById('photo-btn').onclick=()=>document.getElementById('meal-photo').click();
-document.getElementById('photo-clear').onclick=()=>{ setPhoto(null); document.getElementById('meal-photo').value=''; };
-document.getElementById('meal-photo').onchange=async e=>{
+function clearPhotoInputs(){ document.getElementById('meal-photo').value=''; document.getElementById('meal-camera').value=''; }
+document.getElementById('photo-clear').onclick=()=>{ setPhoto(null); clearPhotoInputs(); };
+async function onPhotoPicked(e){
   const f=e.target.files[0]; if(!f) return;
+  showAnalyzeError('');
   try{ setPhoto(await compressImage(f)); }
   catch(err){ showAnalyzeError('No pude leer esa imagen.'); }
-};
+}
+document.getElementById('meal-photo').onchange=onPhotoPicked;
+document.getElementById('meal-camera').onchange=onPhotoPicked;
 function showAnalyzeError(msg){
   const el=document.getElementById('analyze-error');
   el.textContent=msg; el.hidden=!msg;
@@ -1351,7 +1364,7 @@ document.getElementById('r-save').onclick=async()=>{
     pendingResult=null;
     document.getElementById('result-card').hidden=true;
     document.getElementById('meal-text').value='';
-    setPhoto(null); document.getElementById('meal-photo').value='';
+    setPhoto(null); clearPhotoInputs();
     await renderNutrition();
   }catch(e){ showAnalyzeError('No se pudo guardar.'); }
   finally{ btn.disabled=false; }
