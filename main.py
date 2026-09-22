@@ -165,8 +165,11 @@ ANALYZE_SCHEMA = {
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 # ---- Motor 1: Gemini (plan gratuito de Google AI Studio) ----
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+# Se prueban en orden; si uno da 404 (retirado) o 503 (saturado) se pasa al siguiente.
+GEMINI_MODELS = [m.strip() for m in os.environ.get(
+    "GEMINI_MODELS", "gemini-3.8-flash,gemini-3.5-flash,gemini-3.5-flash-lite"
+).split(",") if m.strip()]
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 
 async def analyze_with_gemini(parts: list, api_key: str) -> dict:
@@ -179,15 +182,25 @@ async def analyze_with_gemini(parts: list, api_key: str) -> dict:
             "temperature": 0.2,
         },
     }
+    last_err = "sin modelos configurados"
     async with httpx.AsyncClient(timeout=60) as client:
-        r = await client.post(GEMINI_URL, params={"key": api_key}, json=body)
+        for model in GEMINI_MODELS:
+            r = await client.post(GEMINI_URL.format(model=model), json=body,
+                                  headers={"x-goog-api-key": api_key})
+            if r.status_code == 200:
+                break
+            try:
+                msg = r.json().get("error", {}).get("message", r.text)
+            except Exception:
+                msg = r.text
+            last_err = f"Gemini {model} {r.status_code}: {msg[:200]}"
+            print(f"[nutrition/analyze] {last_err}", flush=True)
+            if r.status_code not in (404, 429, 503):
+                break
+        else:
+            raise RuntimeError(last_err)
     if r.status_code != 200:
-        try:
-            msg = r.json().get("error", {}).get("message", r.text)
-        except Exception:
-            msg = r.text
-        print(f"[nutrition/analyze] Gemini {r.status_code}: {msg[:300]}", flush=True)
-        raise RuntimeError(f"Gemini {r.status_code}: {msg[:200]}")
+        raise RuntimeError(last_err)
     data = r.json()
     try:
         text = data["candidates"][0]["content"]["parts"][0]["text"]
