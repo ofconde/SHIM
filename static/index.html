@@ -440,8 +440,9 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
 .meal-kcal{ font-family:var(--font-d); font-weight:700; font-size:20px; color:var(--orange); white-space:nowrap; cursor:pointer; }
 .meal-del{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:16px; padding:4px 6px; flex-shrink:0; }
 .meal-del:hover{ color:var(--red); }
-.meal-edit{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:15px; padding:4px 6px; flex-shrink:0; }
+.meal-edit{ background:none; border:none; color:var(--text-faint); cursor:pointer; padding:4px 6px; flex-shrink:0; display:flex; align-items:center; }
 .meal-edit:hover{ color:var(--orange); }
+.meal-edit svg{ width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .meal-edit-form{ margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); }
 .meal-edit-name{
   width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text);
@@ -1391,7 +1392,7 @@ function renderMealsList(){
           <div class="meal-macros">P <b>${Math.round(m.protein_g)}</b> · C <b>${Math.round(m.carbs_g)}</b> · G <b>${Math.round(m.fat_g)}</b>${m.source==='photo'?' · 📷':m.source==='quick'?' · ⚡':''}</div>
         </div>
         <div class="meal-kcal">${Math.round(m.kcal)}</div>
-        <button class="meal-edit" title="Editar">✎</button>
+        <button class="meal-edit" title="Editar"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></button>
         <button class="meal-del" title="Eliminar">✕</button>
       </div>
       <div class="meal-edit-form" hidden>
