@@ -430,15 +430,24 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
 .result-notes b{ color:var(--yellow); font-weight:600; }
 
 /* ---- Meals list ---- */
-.meal-row{ display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--line); }
+.meal-row{ padding:11px 0; border-bottom:1px solid var(--line); }
 .meal-row:last-child{ border-bottom:none; padding-bottom:0; }
-.meal-info{ flex:1; min-width:0; }
+.meal-row-main{ display:flex; align-items:center; gap:10px; }
+.meal-info{ flex:1; min-width:0; cursor:pointer; }
 .meal-name{ font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .meal-macros{ font-family:var(--font-m); font-size:10px; color:var(--text-faint); margin-top:2px; }
 .meal-macros b{ color:var(--text-dim); font-weight:500; }
-.meal-kcal{ font-family:var(--font-d); font-weight:700; font-size:20px; color:var(--orange); white-space:nowrap; }
-.meal-del{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:16px; padding:4px 6px; }
+.meal-kcal{ font-family:var(--font-d); font-weight:700; font-size:20px; color:var(--orange); white-space:nowrap; cursor:pointer; }
+.meal-del{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:16px; padding:4px 6px; flex-shrink:0; }
 .meal-del:hover{ color:var(--red); }
+.meal-edit{ background:none; border:none; color:var(--text-faint); cursor:pointer; font-size:15px; padding:4px 6px; flex-shrink:0; }
+.meal-edit:hover{ color:var(--orange); }
+.meal-edit-form{ margin-top:10px; padding-top:10px; border-top:1px dashed var(--line); }
+.meal-edit-name{
+  width:100%; background:var(--bg); border:1px solid var(--line); color:var(--text);
+  font-family:var(--font-b); font-size:13px; border-radius:6px; padding:8px 10px; margin-bottom:8px;
+}
+.meal-edit-name:focus{ outline:2px solid var(--orange); outline-offset:1px; border-color:var(--orange); }
 .empty{ font-family:var(--font-m); font-size:12px; color:var(--text-faint); text-align:center; padding:16px 0 4px; }
 
 /* ---- Progress screen ---- */
@@ -1376,13 +1385,53 @@ function renderMealsList(){
     const row=document.createElement('div');
     row.className='meal-row';
     row.innerHTML=`
-      <div class="meal-info">
-        <div class="meal-name">${esc(m.name)}</div>
-        <div class="meal-macros">P <b>${Math.round(m.protein_g)}</b> · C <b>${Math.round(m.carbs_g)}</b> · G <b>${Math.round(m.fat_g)}</b>${m.source==='photo'?' · 📷':m.source==='quick'?' · ⚡':''}</div>
+      <div class="meal-row-main">
+        <div class="meal-info">
+          <div class="meal-name">${esc(m.name)}</div>
+          <div class="meal-macros">P <b>${Math.round(m.protein_g)}</b> · C <b>${Math.round(m.carbs_g)}</b> · G <b>${Math.round(m.fat_g)}</b>${m.source==='photo'?' · 📷':m.source==='quick'?' · ⚡':''}</div>
+        </div>
+        <div class="meal-kcal">${Math.round(m.kcal)}</div>
+        <button class="meal-edit" title="Editar">✎</button>
+        <button class="meal-del" title="Eliminar">✕</button>
       </div>
-      <div class="meal-kcal">${Math.round(m.kcal)}</div>
-      <button class="meal-del" title="Eliminar">✕</button>`;
-    row.querySelector('.meal-del').onclick=async()=>{
+      <div class="meal-edit-form" hidden>
+        <input class="meal-edit-name" value="${esc(m.name)}">
+        <div class="macro-edit">
+          <label>kcal<input type="number" class="me-kcal" value="${Math.round(m.kcal)}"></label>
+          <label>Prot g<input type="number" class="me-p" value="${Math.round(m.protein_g)}"></label>
+          <label>Carb g<input type="number" class="me-c" value="${Math.round(m.carbs_g)}"></label>
+          <label>Gras g<input type="number" class="me-g" value="${Math.round(m.fat_g)}"></label>
+        </div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn ghost me-cancel">Cancelar</button>
+          <button class="btn primary me-save">Guardar</button>
+        </div>
+      </div>`;
+    const form=row.querySelector('.meal-edit-form');
+    const openEdit=()=>{ form.hidden=false; row.querySelector('.meal-edit-name').focus(); };
+    row.querySelector('.meal-edit').onclick=openEdit;
+    row.querySelector('.meal-info').onclick=openEdit;
+    row.querySelector('.meal-kcal').onclick=openEdit;
+    row.querySelector('.me-cancel').onclick=()=>{ form.hidden=true; };
+    row.querySelector('.me-save').onclick=async()=>{
+      const saveBtn=row.querySelector('.me-save');
+      const name=row.querySelector('.meal-edit-name').value.trim();
+      if(!name) return;
+      const num=sel=>parseFloat(row.querySelector(sel).value)||0;
+      saveBtn.disabled=true;
+      try{
+        const r=await fetch(`/api/nutrition/meals/${m.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          name, kcal:num('.me-kcal'), protein_g:num('.me-p'), carbs_g:num('.me-c'), fat_g:num('.me-g'),
+        })});
+        if(!r.ok) throw new Error(r.status);
+        await renderNutrition();
+      }catch(e){
+        saveBtn.disabled=false;
+        alert('No se pudo guardar el cambio.');
+      }
+    };
+    row.querySelector('.meal-del').onclick=async(ev)=>{
+      ev.stopPropagation();
       if(!confirm(`¿Eliminar "${m.name}"?`)) return;
       await fetch(`/api/nutrition/meals/${m.id}`,{method:'DELETE'});
       renderNutrition();

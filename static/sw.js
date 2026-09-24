@@ -1,5 +1,5 @@
 // SHIM service worker — network first for all navigation
-const CACHE = 'shim-v14';
+const CACHE = 'shim-v15';
 
 self.addEventListener('install', e => {
   self.skipWaiting();

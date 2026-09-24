@@ -541,6 +541,35 @@ def create_meal(payload: MealPayload, db: Session = Depends(get_db)):
     return meal_to_dict(m)
 
 
+class MealUpdatePayload(BaseModel):
+    name: Optional[str] = None
+    items: Optional[list[str]] = None
+    kcal: Optional[float] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+
+
+@app.patch("/api/nutrition/meals/{meal_id}")
+def update_meal(meal_id: int, payload: MealUpdatePayload, db: Session = Depends(get_db)):
+    m = db.query(Meal).filter(Meal.id == meal_id).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="comida no encontrada")
+    if payload.name is not None:
+        if not payload.name.strip():
+            raise HTTPException(status_code=400, detail="la comida necesita un nombre")
+        m.name = payload.name.strip()
+    if payload.items is not None:
+        m.items = json.dumps(payload.items, ensure_ascii=False)
+    if payload.kcal is not None: m.kcal = payload.kcal
+    if payload.protein_g is not None: m.protein_g = payload.protein_g
+    if payload.carbs_g is not None: m.carbs_g = payload.carbs_g
+    if payload.fat_g is not None: m.fat_g = payload.fat_g
+    db.commit()
+    db.refresh(m)
+    return meal_to_dict(m)
+
+
 @app.delete("/api/nutrition/meals/{meal_id}")
 def delete_meal(meal_id: int, db: Session = Depends(get_db)):
     m = db.query(Meal).filter(Meal.id == meal_id).first()
