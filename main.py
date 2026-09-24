@@ -8,7 +8,7 @@ from typing import Optional
 import httpx
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, Form
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Float, Date
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
@@ -801,4 +801,17 @@ def export_day_log(days: int = 14, db: Session = Depends(get_db)):
 
 
 # ---------- Static (last) ----------
+# index.html se sirve a mano y sin caché: es el archivo que más cambia, y si
+# el navegador (o una PWA instalada) lo guarda en caché, el usuario se queda
+# viendo una versión vieja de la app hasta que borre datos del sitio a mano.
+# El resto de los estáticos (JS externo, íconos, manifest) sí se benefician
+# de la caché normal del navegador porque cambian poco.
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(
+        "static/index.html",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
+
+
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
