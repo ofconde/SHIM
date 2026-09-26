@@ -50,6 +50,17 @@ class Weight(Base):
     day = Column(Date, primary_key=True)
     kg = Column(Float, nullable=False)
     note = Column(String)
+    # Datos extra de balanzas de bioimpedancia (ej. Zepp Life). Todos opcionales:
+    # una carga manual normalmente solo trae kg, una foto/lectura de balanza trae todo.
+    body_score = Column(Float)      # Puntuación corporal
+    bmi = Column(Float)             # IMC
+    body_fat_pct = Column(Float)    # Grasa corporal %
+    water_pct = Column(Float)       # Nivel de agua %
+    bmr_kcal = Column(Float)        # Metabolismo basal
+    visceral_fat = Column(Float)    # Grasa visceral (índice)
+    bone_mass_kg = Column(Float)    # Masa ósea
+    protein_pct = Column(Float)     # Proteínas %
+    muscle_mass_kg = Column(Float)  # Músculo
     created_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -77,6 +88,28 @@ class DailyLog(Base):
 
 
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_columns(table_name: str, columns: dict):
+    """Migración liviana: agrega columnas nuevas a una tabla ya existente.
+    create_all() no altera tablas existentes, así que si el modelo suma un
+    campo (ej. datos de balanza) esto lo agrega sin perder lo que ya había.
+    Compatible con Postgres y SQLite."""
+    from sqlalchemy import inspect as sa_inspect, text
+    existing = {c["name"] for c in sa_inspect(engine).get_columns(table_name)}
+    missing = {k: v for k, v in columns.items() if k not in existing}
+    if not missing:
+        return
+    with engine.begin() as conn:
+        for name, sql_type in missing.items():
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {name} {sql_type}"))
+
+
+_ensure_columns("weights", {
+    "body_score": "FLOAT", "bmi": "FLOAT", "body_fat_pct": "FLOAT",
+    "water_pct": "FLOAT", "bmr_kcal": "FLOAT", "visceral_fat": "FLOAT",
+    "bone_mass_kg": "FLOAT", "protein_pct": "FLOAT", "muscle_mass_kg": "FLOAT",
+})
 
 
 def get_db():
@@ -625,16 +658,39 @@ def nutrition_history(days: int = 14, db: Session = Depends(get_db)):
 
 
 # ---- Weight ----
+# Campos de bioimpedancia (ej. balanza Zepp Life) — todos opcionales.
+BODY_COMP_FIELDS = [
+    "body_score", "bmi", "body_fat_pct", "water_pct", "bmr_kcal",
+    "visceral_fat", "bone_mass_kg", "protein_pct", "muscle_mass_kg",
+]
+
+
 class WeightPayload(BaseModel):
     date: Optional[str] = None
     kg: float
     note: Optional[str] = None
+    body_score: Optional[float] = None
+    bmi: Optional[float] = None
+    body_fat_pct: Optional[float] = None
+    water_pct: Optional[float] = None
+    bmr_kcal: Optional[float] = None
+    visceral_fat: Optional[float] = None
+    bone_mass_kg: Optional[float] = None
+    protein_pct: Optional[float] = None
+    muscle_mass_kg: Optional[float] = None
+
+
+def weight_to_dict(w: Weight) -> dict:
+    d = {"date": w.day.isoformat(), "kg": w.kg, "note": w.note}
+    for f in BODY_COMP_FIELDS:
+        d[f] = getattr(w, f)
+    return d
 
 
 @app.get("/api/weight")
 def list_weights(db: Session = Depends(get_db)):
     rows = db.query(Weight).order_by(Weight.day.asc()).all()
-    entries = [{"date": w.day.isoformat(), "kg": w.kg, "note": w.note} for w in rows]
+    entries = [weight_to_dict(w) for w in rows]
     return {"entries": entries, "goal": WEIGHT_GOAL}
 
 
@@ -647,11 +703,18 @@ def upsert_weight(payload: WeightPayload, db: Session = Depends(get_db)):
     if w:
         w.kg = payload.kg
         w.note = payload.note
+        # Los datos de composición corporal se mergean: una carga manual que
+        # solo trae kg no debe borrar lo que ya había cargado la balanza ese día.
+        for f in BODY_COMP_FIELDS:
+            val = getattr(payload, f)
+            if val is not None:
+                setattr(w, f, val)
     else:
-        w = Weight(day=day, kg=payload.kg, note=payload.note)
+        w = Weight(day=day, kg=payload.kg, note=payload.note,
+                    **{f: getattr(payload, f) for f in BODY_COMP_FIELDS})
         db.add(w)
     db.commit()
-    return {"date": day.isoformat(), "kg": w.kg, "note": w.note, "ok": True}
+    return {**weight_to_dict(w), "ok": True}
 
 
 @app.delete("/api/weight/{day}")

@@ -465,6 +465,13 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
 }
 .weight-form input:focus{ outline:2px solid var(--orange); outline-offset:1px; border-color:var(--orange); }
 .weight-form .btn{ flex:0 0 auto; padding:10px 16px; }
+.body-comp-toggle{
+  background:none; border:none; color:var(--text-faint); cursor:pointer;
+  font-family:var(--font-m); font-size:11px; padding:10px 0 2px; text-align:left; width:100%;
+}
+.body-comp-toggle:hover{ color:var(--orange); }
+.body-comp-grid{ grid-template-columns:repeat(3,1fr); margin-top:8px; }
+.weight-row-detail{ font-family:var(--font-m); font-size:10px; color:var(--text-faint); margin-top:2px; }
 .line-chart{ width:100%; height:auto; display:block; margin-top:6px; }
 .chart-legend{ display:flex; gap:14px; margin-top:8px; font-family:var(--font-m); font-size:10px; color:var(--text-dim); }
 .chart-legend span{ display:flex; align-items:center; gap:5px; }
@@ -475,7 +482,8 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
 .kbar{ flex:1; background:var(--bg-elev-2); border-radius:3px 3px 0 0; min-height:2px; transition:height .4s; }
 .kbar.ok{ background:var(--green); } .kbar.over{ background:var(--red); } .kbar.under{ background:var(--orange); }
 .kbar-lbls{ display:flex; justify-content:space-between; font-family:var(--font-m); font-size:9px; color:var(--text-faint); margin-top:5px; }
-.weight-row{ display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--line); font-family:var(--font-m); font-size:12px; }
+.weight-row{ padding:9px 0; border-bottom:1px solid var(--line); font-family:var(--font-m); font-size:12px; }
+.weight-row-main{ display:flex; align-items:center; gap:12px; }
 .weight-row:last-child{ border-bottom:none; }
 .weight-row .wd{ color:var(--text-dim); flex:1; }
 .weight-row .wk{ font-family:var(--font-d); font-weight:700; font-size:18px; }
@@ -731,6 +739,18 @@ body.tabs-hidden .tabbar{ transform:translateY(110%); }
         <div class="weight-form">
           <input type="number" step="0.1" inputmode="decimal" id="w-input" placeholder="Peso de hoy (kg)">
           <button class="btn primary" id="w-save">Registrar</button>
+        </div>
+        <button class="body-comp-toggle" id="body-comp-toggle" type="button">+ Datos de balanza (grasa, músculo, visceral…)</button>
+        <div class="macro-edit body-comp-grid" id="body-comp-grid" hidden>
+          <label>Grasa %<input type="number" step="0.1" id="bc-fat"></label>
+          <label>Visceral<input type="number" step="1" id="bc-visceral"></label>
+          <label>Agua %<input type="number" step="0.1" id="bc-water"></label>
+          <label>Músculo kg<input type="number" step="0.1" id="bc-muscle"></label>
+          <label>Hueso kg<input type="number" step="0.01" id="bc-bone"></label>
+          <label>Proteína %<input type="number" step="0.1" id="bc-protein"></label>
+          <label>Metabol. kcal<input type="number" step="1" id="bc-bmr"></label>
+          <label>IMC<input type="number" step="0.1" id="bc-bmi"></label>
+          <label>Puntuación<input type="number" step="1" id="bc-score"></label>
         </div>
         <div class="error-msg" id="w-error" hidden></div>
       </div>
@@ -1745,11 +1765,19 @@ function renderWeightList(){
     const diff=prev?e.kg-prev.kg:null;
     const row=document.createElement('div');
     row.className='weight-row';
+    const bc=[];
+    if(e.body_fat_pct!=null) bc.push(`Grasa ${e.body_fat_pct}%`);
+    if(e.visceral_fat!=null) bc.push(`Visceral ${e.visceral_fat}`);
+    if(e.muscle_mass_kg!=null) bc.push(`Músculo ${e.muscle_mass_kg}kg`);
+    if(e.water_pct!=null) bc.push(`Agua ${e.water_pct}%`);
     row.innerHTML=`
-      <span class="wd">${new Date(e.date+'T00:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}).replace('.','')}</span>
-      <span class="wdiff" style="color:${diff===null?'var(--text-faint)':diff<=0?'var(--green)':'var(--red)'}">${diff===null?'':(diff>0?'+':'')+diff.toFixed(1)}</span>
-      <span class="wk">${e.kg.toFixed(1)}</span>
-      <button class="meal-del" title="Eliminar">✕</button>`;
+      <div class="weight-row-main">
+        <span class="wd">${new Date(e.date+'T00:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}).replace('.','')}</span>
+        <span class="wdiff" style="color:${diff===null?'var(--text-faint)':diff<=0?'var(--green)':'var(--red)'}">${diff===null?'':(diff>0?'+':'')+diff.toFixed(1)}</span>
+        <span class="wk">${e.kg.toFixed(1)}</span>
+        <button class="meal-del" title="Eliminar">✕</button>
+      </div>
+      ${bc.length?`<div class="weight-row-detail">${bc.join(' · ')}</div>`:''}`;
     row.querySelector('.meal-del').onclick=async()=>{
       if(!confirm(`¿Eliminar el registro del ${e.date}?`)) return;
       await fetch(`/api/weight/${e.date}`,{method:'DELETE'});
@@ -1780,6 +1808,11 @@ function renderKcalBars(h){
     ?`<span><i style="background:var(--green)"></i>${within}/${logged} días en rango (±10–15%)</span>`
     :`<span>Sin comidas registradas aún.</span>`;
 }
+document.getElementById('body-comp-toggle').onclick=()=>{
+  const grid=document.getElementById('body-comp-grid');
+  grid.hidden=!grid.hidden;
+};
+function bcNum(id){ const v=document.getElementById(id).value; return v===''?null:parseFloat(v); }
 document.getElementById('w-save').onclick=async()=>{
   const inp=document.getElementById('w-input'), err=document.getElementById('w-error');
   const kg=parseFloat(inp.value);
@@ -1787,9 +1820,17 @@ document.getElementById('w-save').onclick=async()=>{
   if(!kg||kg<30||kg>250){ err.textContent='Ingresá un peso válido.'; err.hidden=false; return; }
   const btn=document.getElementById('w-save'); btn.disabled=true;
   try{
-    const r=await fetch('/api/weight',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:isoDate(new Date()),kg})});
+    const r=await fetch('/api/weight',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      date:isoDate(new Date()), kg,
+      body_fat_pct:bcNum('bc-fat'), visceral_fat:bcNum('bc-visceral'), water_pct:bcNum('bc-water'),
+      muscle_mass_kg:bcNum('bc-muscle'), bone_mass_kg:bcNum('bc-bone'), protein_pct:bcNum('bc-protein'),
+      bmr_kcal:bcNum('bc-bmr'), bmi:bcNum('bc-bmi'), body_score:bcNum('bc-score'),
+    })});
     if(!r.ok) throw new Error(r.status);
     inp.value='';
+    ['bc-fat','bc-visceral','bc-water','bc-muscle','bc-bone','bc-protein','bc-bmr','bc-bmi','bc-score']
+      .forEach(id=>document.getElementById(id).value='');
+    document.getElementById('body-comp-grid').hidden=true;
     await renderProgress();
   }catch(e){ err.textContent='No se pudo guardar.'; err.hidden=false; }
   finally{ btn.disabled=false; }
