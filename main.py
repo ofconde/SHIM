@@ -15,8 +15,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base, Session
 
 # ---------- Database ----------
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./data.db")
+# Se fuerza el driver psycopg2 explícito: sin esto, versiones nuevas de
+# SQLAlchemy resuelven "postgresql://" contra el driver psycopg (v3), que no
+# está instalado (usamos psycopg2-binary) y el server no arranca (502).
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
