@@ -928,18 +928,46 @@ async function apiSet(key,value){
   return r.json();
 }
 let _saveTimeout;
+let _saveSeq=0, _savePending=false;   // _savePending: hay un guardado programado o en vuelo
 function saveProgress(){
   const el=document.getElementById('save-state');
   if(el) el.textContent='Guardando…';
   clearTimeout(_saveTimeout);
+  const mine=++_saveSeq; _savePending=true;
   _saveTimeout=setTimeout(async()=>{
     try{
       await apiSet(STORAGE_KEY,JSON.stringify(progress));
       if(el){ el.textContent='Guardado ✓'; setTimeout(()=>{if(el)el.textContent='';},1500); }
     }catch(e){
       if(el) el.textContent='Error al guardar';
+    }finally{
+      if(mine===_saveSeq) _savePending=false;
     }
   },300);
+}
+
+// Cada guardado manda TODO el progreso. Si la app quedó abierta en segundo plano con
+// un estado viejo (ej. después de reiniciar el ciclo desde otro lado o desde otro
+// dispositivo), el próximo toque pisaba el servidor con datos viejos. Por eso al
+// volver a primer plano se vuelve a leer el progreso del servidor.
+async function refreshProgressFromServer(){
+  if(_savePending || !ROUTINE.length) return;
+  try{
+    const r=await apiGet(STORAGE_KEY);
+    if(_savePending || !r || !r.value) return;
+    const remote=JSON.parse(r.value);
+    if(!remote.weeks) return;
+    if(JSON.stringify(remote)===JSON.stringify(progress)) return;
+    progress=remote;
+    if(progress.rotationPointer===undefined||progress.rotationPointer===null) progress.rotationPointer=0;
+    activeDay=ROTATION_CYCLE[progress.rotationPointer%ROTATION_CYCLE.length];
+    activeWeek=Math.floor(progress.rotationPointer/6)+1;
+    if(activeWeek>5) activeWeek=1;
+    ensureWeek(activeWeek);
+    renderHome();
+    if(screenStack.includes('session')) renderSession();
+    if(screenStack.includes('exercise')) renderExercise();
+  }catch(e){ console.error('refreshProgressFromServer', e); }
 }
 async function loadProgress(){
   // Fetch routine from server with 5s timeout fallback
@@ -1854,8 +1882,8 @@ function checkDayRollover(){
   if(screenStack[0]==='progress') renderProgress();
   if(screenStack[0]==='home') renderHome();
 }
-document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkDayRollover(); });
-window.addEventListener('focus', checkDayRollover);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden){ checkDayRollover(); refreshProgressFromServer(); } });
+window.addEventListener('focus', ()=>{ checkDayRollover(); refreshProgressFromServer(); });
 setInterval(checkDayRollover, 5*60*1000); // respaldo si la app queda despierta toda la noche
 
 (async function init(){
